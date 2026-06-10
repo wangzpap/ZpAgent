@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+
+# 环境变量（包含 API Key，禁止提交）
+.env
+
+# Log files
+*.log
+logs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Node (前端)
+front/node_modules/
+front/dist/
+.claude

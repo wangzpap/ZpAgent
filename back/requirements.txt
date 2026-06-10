@@ -1,0 +1,18 @@
+# ============================================
+# ZpAgent 后端依赖（基于 LangChain 1.2）
+# ============================================
+
+# Web 框架
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+
+# LangChain 1.2 生态
+langchain>=1.2.0,<2.0
+langchain-openai>=1.2.0,<2.0
+
+# 数据校验 & 配置
+pydantic>=2.9.0,<3.0
+pydantic-settings>=2.5.0,<3.0
+
+# 工具库
+python-dotenv>=1.0.1
