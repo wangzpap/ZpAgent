@@ -1,6 +1,8 @@
 <!--
   ToolSelector.vue — 下拉多选工具选择器
-  放置在输入框底部区域，点击按钮展开浮动面板进行多选
+
+  放置在输入框底部区域，点击按钮展开浮动面板进行工具多选。
+  使用 Teleport 将下拉面板渲染到 body，避免被父组件 overflow 裁切。
 -->
 <template>
   <div class="tool-selector" ref="selectorRef">
@@ -15,22 +17,21 @@
         <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
       </svg>
       <span>工具</span>
+      <!-- 已选数量徽标 -->
       <span class="count-badge">{{ selected.length }}</span>
       <svg class="arrow-svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="6 9 12 15 18 9"/>
       </svg>
     </button>
 
-    <!-- 整体 Teleport 到 body，避免层叠上下文问题 -->
+    <!-- 下拉面板（Teleport 到 body 避免层叠上下文问题） -->
     <Teleport to="body">
       <template v-if="isOpen">
+        <!-- 点击遮罩关闭 -->
         <div class="tool-overlay" @click="isOpen = false" />
-        <div
-          class="tool-dropdown"
-          :style="dropdownStyle"
-          @click.stop
-        >
-          <!-- 头部 -->
+        <!-- 下拉内容 -->
+        <div class="tool-dropdown" :style="dropdownStyle" @click.stop>
+          <!-- 头部：标题 + 全选/取消全选 -->
           <div class="tool-dropdown-header">
             <span>已启用工具</span>
             <button v-if="tools.length > 0" class="toggle-all" @click="toggleAll">
@@ -48,7 +49,7 @@
             暂无可用工具，请检查后端服务
           </div>
 
-          <!-- 工具列表 -->
+          <!-- 工具列表（多选） -->
           <div
             v-for="tool in tools"
             :key="tool.name"
@@ -62,7 +63,7 @@
               </svg>
             </div>
             <div class="tool-label">
-              <div class="tool-name">{{ displayName(tool.name) }}</div>
+              <div class="tool-name">{{ toolDisplayName(tool.name) }}</div>
               <div class="tool-desc">{{ shortDesc(tool.description) }}</div>
             </div>
           </div>
@@ -74,10 +75,11 @@
 
 <script setup>
 import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { toolDisplayName } from '../utils/index.js'
 
 const props = defineProps({
-  tools: { type: Array, default: () => [] },
-  selected: { type: Array, default: () => [] },
+  tools:    { type: Array, default: () => [] },  // 可用工具列表
+  selected: { type: Array, default: () => [] },  // 已选工具名称列表
 })
 
 const emit = defineEmits(['toggle'])
@@ -86,10 +88,12 @@ const isOpen = ref(false)
 const triggerRef = ref(null)
 const dropdownStyle = ref({})
 
+// 是否全部选中
 const allSelected = computed(
   () => props.tools.length > 0 && props.selected.length === props.tools.length
 )
 
+/** 切换下拉面板的显示/隐藏 */
 async function toggleOpen() {
   isOpen.value = !isOpen.value
   if (isOpen.value) {
@@ -98,6 +102,7 @@ async function toggleOpen() {
   }
 }
 
+/** 根据触发按钮位置计算下拉面板的固定坐标 */
 function calcPosition() {
   if (!triggerRef.value) return
   const rect = triggerRef.value.getBoundingClientRect()
@@ -108,18 +113,15 @@ function calcPosition() {
   }
 }
 
+/** 窗口 resize 时重新计算位置 */
 function handleResize() {
   if (isOpen.value) calcPosition()
 }
 
-onMounted(() => {
-  window.addEventListener('resize', handleResize)
-})
+onMounted(() => window.addEventListener('resize', handleResize))
+onBeforeUnmount(() => window.removeEventListener('resize', handleResize))
 
-onBeforeUnmount(() => {
-  window.removeEventListener('resize', handleResize)
-})
-
+/** 全选 / 取消全选 */
 function toggleAll() {
   if (allSelected.value) {
     props.tools.forEach((t) => {
@@ -132,15 +134,7 @@ function toggleAll() {
   }
 }
 
-function displayName(name) {
-  const map = {
-    get_location: '当前位置',
-    get_datetime: '当前时间',
-    get_weather: '天气查询',
-  }
-  return map[name] || name
-}
-
+/** 截断描述文本（最多 30 字符） */
 function shortDesc(desc) {
   if (!desc) return ''
   const first = desc.split('\n')[0].trim()

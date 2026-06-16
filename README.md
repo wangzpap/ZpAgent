@@ -1,30 +1,30 @@
 # ZpAgent - ReAct 智能体项目
 
-基于 **LangChain 1.2 + FastAPI + Vue 3** 构建的 ReAct 范式智能体，支持 SSE 流式输出、动态工具多选和多轮会话记忆。
+基于 **LangChain 1.2 + LangGraph + FastAPI + Vue 3** 构建的 ReAct 范式智能体，支持 SSE 流式输出、动态工具多选和多轮会话记忆。
 
 ## 项目架构
 
 ```
 ZpAgent-Python/
-├── back/                            # 后端（Python + FastAPI + LangChain）
+├── back/                            # 后端（Python + FastAPI + LangChain + LangGraph）
 │   ├── main.py                      # FastAPI 应用入口
 │   ├── config.py                    # 配置管理（pydantic-settings）
 │   ├── .env                         # 环境变量（API Key 等，不提交 Git）
 │   ├── agent/
-│   │   └── __init__.py              # ReAct Agent 核心引擎（流式 + 并行工具）
+│   │   ├── __init__.py              # ReAct Agent 编排层（流式事件 + 会话管理）
+│   │   └── graph.py                 # LangGraph Agent 图工厂（create_agent）
 │   ├── llm/
 │   │   └── __init__.py              # LLM 客户端（ChatOpenAI）
 │   ├── tools/
 │   │   ├── __init__.py              # LangChain @tool 导出
-│   │   ├── builtin_tools.py         # 内置工具（天气/计算/日期/文本）
+│   │   ├── builtin_tools.py         # 内置工具（位置/时间/天气）
 │   │   └── registry.py             # 工具注册表
 │   ├── memory/
-│   │   └── __init__.py              # 会话记忆（抽象基类 + 内存实现）
+│   │   └── __init__.py              # 会话注册表（ConversationRegistry）
 │   ├── models/
 │   │   └── __init__.py              # Pydantic 数据模型
 │   ├── routers/
-│   │   ├── chat.py                  # 聊天路由（SSE 流式）
-│   │   └── conversations.py         # 会话管理路由
+│   │   └── api.py                   # 统一 API 路由（聊天 + 会话管理 + 工具）
 │   └── requirements.txt             # Python 依赖
 │
 └── front/                           # 前端（Vue 3 + Vite）
@@ -51,10 +51,34 @@ ZpAgent-Python/
 |------|------|------|------|
 | 后端框架 | FastAPI | 0.115+ | 高性能异步 Web 框架 |
 | AI 框架 | LangChain | 1.2+ | LLM 调用 + 工具绑定 + astream_events 流式 |
+| Agent 引擎 | LangGraph | 1.2+ | ReAct 状态图 + InMemorySaver checkpointer |
 | LLM API | OpenAI 兼容 | — | DeepSeek / 智谱 / Moonshot / OpenAI 等 |
 | 流式传输 | SSE | — | Server-Sent Events 逐 token 实时输出 |
 | 前端框架 | Vue 3 + Vite | 3.5+ / 5.4+ | Composition API + 快速热更新 |
-| 会话记忆 | 内存存储 | — | 抽象基类设计，可扩展至数据库 |
+| 会话记忆 | LangGraph InMemorySaver | — | 框架原生 checkpointer，通过 thread_id 管理对话状态 |
+
+## 会话记忆机制
+
+项目采用 **双层架构** 实现会话记忆，各司其职：
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                     会话记忆 = 两层协作                       │
+├─────────────────────────┬────────────────────────────────────┤
+│  ConversationRegistry   │  LangGraph checkpointer            │
+│  ─────────────────────  │  ────────────────────────           │
+│  应用层：会话元数据      │  框架层：对话状态管理               │
+│  - 会话列表/创建/删除   │  - 通过 thread_id 关联对话          │
+│  - 标题管理             │  - 自动拼接历史上下文给 LLM         │
+│  - asyncio.Lock 并发安全│  - 跨请求状态持久化                 │
+│                         │  - 支持 human-in-the-loop           │
+└─────────────────────────┴────────────────────────────────────┘
+```
+
+- **LangGraph checkpointer（InMemorySaver）**：框架层自动管理对话状态。每次请求只需传入当前用户消息 + `thread_id`，框架自动从 checkpointer 中取出该会话的完整历史并拼接上下文，无需手动传递消息。
+- **ConversationRegistry**：应用层管理会话元数据（标题、时间戳），供前端 UI 展示会话列表。消息历史通过 `agent.aget_state()` 从 checkpointer 中读取。
+
+> 参考文档：[LangChain Short-Term Memory](https://langchain-doc.cn/v1/python/langchain/short-term-memory.html)
 
 ## 环境要求
 
@@ -69,7 +93,6 @@ ZpAgent-Python/
 ### 第一步：克隆项目并配置
 
 ```bash
-# 进入项目目录
 cd ZpAgent-Python
 ```
 
@@ -89,11 +112,7 @@ source venv/bin/activate        # macOS / Linux
 pip install -r requirements.txt
 
 # 4. 配置环境变量
-#    项目中已有 .env 文件，只需将 API_KEY 替换为你的 DeepSeek API Key：
 #    编辑 back/.env，将 API_KEY=your-api-key-here 改为你的实际 Key
-#
-#    如果是首次使用，可从模板创建：
-#    cp .env.example .env
 
 # 5. 启动后端服务
 python main.py
@@ -106,7 +125,7 @@ python main.py
   ZpAgent 智能体服务已启动
   模型:     deepseek-v4-flash
   API:      https://api.deepseek.com
-  工具:     weather, calculator, get_datetime, text_tool
+  工具:     get_location, get_datetime, get_weather
   文档:     http://localhost:8000/docs
 =======================================================
 ```
@@ -126,22 +145,14 @@ npm install
 npm run dev
 ```
 
-启动成功后会看到：
-
-```
-  VITE v5.4.x  ready in xxx ms
-
-  ➜  Local:   http://localhost:5173/
-```
-
 > 前端运行在 **http://localhost:5173**
 > Vite 已配置 `/api` 代理到后端 8000 端口，无需额外配置
 
 ### 第四步：开始使用
 
 1. 浏览器打开 **http://localhost:5173**
-2. 在顶部工具栏勾选需要启用的工具（默认全选）
-3. 在底部输入框输入消息，按 Enter 发送
+2. 在底部输入框输入消息，按 Enter 发送
+3. 通过工具栏选择需要启用的工具（默认 3 个内置工具）
 4. 观察 Agent 的 ReAct 推理过程（工具调用 → 观察结果 → 最终回答）
 
 ## 环境变量说明
@@ -167,31 +178,31 @@ npm run dev
 用户输入
   │
   ▼
-┌──────────────────────────────────┐
-│  LLM 推理（astream_events 流式）  │
-│  逐 token 输出 + 检测 tool_calls │
-└──────────────┬───────────────────┘
+┌─────────────────────────────────────────────────┐
+│  LangGraph Agent（create_agent + InMemorySaver） │
+│  checkpointer 自动通过 thread_id 加载对话历史    │
+│  LLM 推理（astream_events v2 流式）              │
+│  逐 token 输出 + 检测 tool_calls                 │
+└──────────────┬──────────────────────────────────┘
                │
      ┌─────────┴──────────┐
      │                    │
   有 tool_calls       无 tool_calls
      │                    │
      ▼                    ▼
- 并行执行工具          输出最终答案
- (asyncio.gather)         │
-     │                    ▼
-     ▼                  结束
- 观察结果 → 回到 LLM 继续推理
+ ToolNode 并行执行      输出最终答案
+     │                    │
+     ▼                    ▼
+ 观察结果 → 回到 LLM   checkpointer 保存状态
 ```
 
 ## 内置工具
 
-| 工具标识 | 名称 | 功能说明 |
-|----------|------|----------|
-| `weather` | 天气查询 | 查询城市天气（模拟数据，可替换为真实 API） |
-| `calculator` | 计算器 | 基于 AST 安全解析的数学表达式计算 |
-| `get_datetime` | 日期时间 | 获取当前日期、时间、星期 |
-| `text_tool` | 文本处理 | 字数统计 / 大小写转换 / 文本反转 |
+| 工具标识 | 功能说明 |
+|----------|----------|
+| `get_location` | 查询用户当前位置（模拟数据） |
+| `get_datetime` | 查询当前日期、时间、星期 |
+| `get_weather` | 根据城市和日期查询天气（模拟数据，支持 8 个主要城市） |
 
 ## 扩展指南
 
@@ -200,7 +211,7 @@ npm run dev
 在 `back/tools/builtin_tools.py` 中用 `@tool` 装饰器定义：
 
 ```python
-from langchain_core.tools import tool
+from langchain.tools import tool
 
 @tool
 def my_new_tool(param: str) -> str:
@@ -214,23 +225,19 @@ def my_new_tool(param: str) -> str:
 
 然后将 `my_new_tool` 加入文件底部的 `BUILTIN_TOOLS` 列表，前端会自动识别。
 
-### 扩展记忆存储
+### 持久化会话记忆
 
-实现 `back/memory/__init__.py` 中的 `BaseMemory` 抽象类：
+当前使用 `InMemorySaver`（内存实现），服务重启后会话丢失。如需持久化，在 `agent/graph.py` 中替换 checkpointer：
 
 ```python
-class PostgresMemory(BaseMemory):
-    async def create_conversation(self) -> str: ...
-    async def get_messages(self, conversation_id) -> list: ...
-    async def add_message(self, conversation_id, message) -> None: ...
-    async def get_conversations(self) -> list: ...
-    async def get_conversation(self, conversation_id) -> dict | None: ...
-    async def delete_conversation(self, conversation_id) -> bool: ...
-    async def conversation_exists(self, conversation_id) -> bool: ...
-    async def update_title(self, conversation_id, title) -> None: ...
-```
+# SQLite 持久化
+from langgraph.checkpoint.sqlite import SqliteSaver
+checkpointer = SqliteSaver.from_conn_string("checkpoints.db")
 
-在 `agent/__init__.py` 中将 `InMemoryStore()` 替换为你的实现即可。
+# PostgreSQL 持久化
+from langgraph.checkpoint.postgres import PostgresSaver
+checkpointer = PostgresSaver.from_conn_string("postgresql://...")
+```
 
 ## API 接口一览
 

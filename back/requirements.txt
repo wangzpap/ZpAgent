@@ -1,18 +1,18 @@
 # ============================================
-# ZpAgent 后端依赖（基于 LangChain 1.2）
+# ZpAgent 后端依赖
 # ============================================
 
 # Web 框架
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
 
-# LangChain 1.2 生态
+# LangChain 生态（提供 @tool 装饰器、create_agent 等）
 langchain>=1.2.0,<2.0
 langchain-openai>=1.2.0,<2.0
 
-# 数据校验 & 配置
+# LangGraph（ReAct Agent 图引擎）
+langgraph>=1.2.0,<2.0
+
+# 数据校验 & 配置管理
 pydantic>=2.9.0,<3.0
 pydantic-settings>=2.5.0,<3.0
-
-# 工具库
-python-dotenv>=1.0.1

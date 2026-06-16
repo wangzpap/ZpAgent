@@ -1,10 +1,13 @@
 """
-工具基类模块
+工具模块入口
 
-统一导出 LangChain 的 @tool 装饰器和 BaseTool 类型，
-方便其他模块引用。所有内置工具在 builtin_tools.py 中定义。
+统一从 langchain.tools 导出 @tool 装饰器和 BaseTool 基类，
+供项目内其他模块引用，避免直接依赖 langchain_core。
+
+使用方式：
+    from tools import tool, BaseTool
 """
 
-from langchain_core.tools import tool, BaseTool
+from langchain.tools import tool, BaseTool
 
 __all__ = ["tool", "BaseTool"]

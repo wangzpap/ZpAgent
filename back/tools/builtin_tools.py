@@ -1,26 +1,27 @@
 """
-内置工具集（基于 LangChain @tool 装饰器）
+内置工具集
 
-提供 3 个工具：
-  - get_location:  查询当前位置（模拟输出）
-  - get_datetime:  查询当前时间
-  - get_weather:   根据时间和地点查询天气（模拟数据）
+使用 LangChain 的 @tool 装饰器定义工具，框架会自动：
+  - 根据函数签名生成参数 JSON Schema
+  - 根据 docstring 生成工具描述
+  - 封装为 BaseTool 实例，可被 Agent 的 bind_tools() 使用
+
+当前内置 3 个工具：
+  - get_location: 查询当前位置（模拟数据）
+  - get_datetime: 查询当前时间
+  - get_weather:  根据城市和日期查询天气（模拟数据）
 """
 
 import json
 import random
 from datetime import datetime
 
-from langchain_core.tools import tool
+from langchain.tools import tool
 
 
-# ============================================
-# 查询当前位置（模拟）
-# ============================================
 @tool
 def get_location() -> str:
-    """查询用户当前所在的位置。"""
-    # 模拟定位结果
+    """查询用户当前所在的位置信息。"""
     return json.dumps(
         {
             "city": "杭州",
@@ -33,9 +34,6 @@ def get_location() -> str:
     )
 
 
-# ============================================
-# 查询当前时间
-# ============================================
 @tool
 def get_datetime() -> str:
     """查询当前的日期和时间信息。"""
@@ -55,9 +53,6 @@ def get_datetime() -> str:
     )
 
 
-# ============================================
-# 根据时间和地点查询天气（模拟）
-# ============================================
 @tool
 def get_weather(city: str, date: str = "今天") -> str:
     """根据城市和日期查询天气信息。
@@ -66,7 +61,7 @@ def get_weather(city: str, date: str = "今天") -> str:
         city: 城市名称，如：杭州、北京、上海
         date: 查询日期，如：今天、明天、后天，默认今天
     """
-    # 模拟天气数据
+    # 已收录城市的模拟天气数据
     mock_data = {
         "杭州": {"temp_high": 28, "temp_low": 20, "weather": "多云转晴", "humidity": 65, "wind": "东风2级"},
         "北京": {"temp_high": 30, "temp_low": 18, "weather": "晴", "humidity": 35, "wind": "北风3级"},
@@ -81,7 +76,7 @@ def get_weather(city: str, date: str = "今天") -> str:
     if city in mock_data:
         data = mock_data[city]
     else:
-        # 未收录城市随机生成
+        # 未收录城市：随机生成合理范围的天气数据
         temp_high = random.randint(22, 35)
         data = {
             "temp_high": temp_high,
@@ -105,7 +100,5 @@ def get_weather(city: str, date: str = "今天") -> str:
     )
 
 
-# ============================================
-# 所有内置工具列表
-# ============================================
+# 所有内置工具列表，供 ToolRegistry 批量注册
 BUILTIN_TOOLS = [get_location, get_datetime, get_weather]

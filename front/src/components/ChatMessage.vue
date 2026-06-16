@@ -1,6 +1,13 @@
 <!--
   ChatMessage.vue — 单条消息组件
-  支持用户消息 / 助手消息，助手消息展示 ReAct 思考过程
+
+  支持两种角色：
+    - user: 用户消息，显示在右侧，琥珀色渐变气泡
+    - assistant: 助手消息，显示在左侧，支持 Markdown 文本 + 工具调用时间线
+
+  助手消息的 segments 结构：
+    - text: 文本片段，使用 marked 渲染 Markdown
+    - tool_call: 工具调用片段，显示工具名、参数、执行结果
 -->
 <template>
   <div class="message-wrapper" :class="message.role">
@@ -22,15 +29,14 @@
 
     <!-- 消息主体 -->
     <div class="message-body">
-      <!-- 角色标签 -->
       <div class="role-label" :class="message.role">
         {{ message.role === 'user' ? 'You' : 'Agent' }}
       </div>
 
-      <!-- 时间线片段（助手消息） -->
+      <!-- 助手消息：按时间线渲染 segments -->
       <template v-if="message.role === 'assistant' && message.segments">
         <template v-for="(seg, idx) in message.segments" :key="idx">
-          <!-- 文本片段（支持 Markdown） -->
+          <!-- 文本片段（Markdown 渲染） -->
           <div
             v-if="seg.type === 'text' && seg.content"
             class="message-bubble assistant md-content"
@@ -66,7 +72,7 @@
         {{ message.content }}
       </div>
 
-      <!-- 加载动画 -->
+      <!-- 加载动画（仅最新一条空助手消息显示） -->
       <div
         v-if="message.role === 'assistant' && (!message.segments || message.segments.length === 0) && isLatest"
         class="message-bubble assistant"
@@ -81,30 +87,20 @@
 
 <script setup>
 import { marked } from 'marked'
+import { toolDisplayName } from '../utils/index.js'
 
 // 配置 marked：GFM 模式 + 换行转 <br>
-marked.setOptions({
-  breaks: true,
-  gfm: true,
-})
+marked.setOptions({ breaks: true, gfm: true })
 
 defineProps({
   message:  { type: Object, required: true },
   isLatest: { type: Boolean, default: false },
 })
 
+/** 渲染 Markdown 文本为 HTML */
 function renderMd(text) {
   if (!text) return ''
   return marked.parse(text)
-}
-
-function toolDisplayName(name) {
-  const map = {
-    get_location: '当前位置',
-    get_datetime: '当前时间',
-    get_weather: '天气查询',
-  }
-  return map[name] || name
 }
 </script>
 
@@ -160,7 +156,7 @@ function toolDisplayName(name) {
   opacity: 0.7;
 }
 
-/* ---- 行内加载指示器（发送按钮） ---- */
+/* ---- 行内加载指示器 ---- */
 .typing-indicator.inline {
   display: inline-flex;
   gap: 3px;

@@ -1,6 +1,10 @@
 <!--
   ConversationList.vue — 侧边栏会话列表
-  展示所有历史会话，支持新建、选择、删除
+
+  展示所有历史会话，支持：
+    - 新建对话（emit new-chat）
+    - 选择会话（emit select）
+    - 删除会话（emit delete）
 -->
 <template>
   <aside class="sidebar">
@@ -13,7 +17,7 @@
       <p>ReAct Intelligent Agent</p>
     </div>
 
-    <!-- 新建对话 -->
+    <!-- 新建对话按钮 -->
     <button class="new-chat-btn" @click="$emit('new-chat')">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
         <line x1="12" y1="5" x2="12" y2="19"/>
@@ -35,6 +39,7 @@
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
         </svg>
         <span class="title">{{ conv.title || '新对话' }}</span>
+        <!-- 删除按钮（hover 时显示） -->
         <button
           class="delete-btn"
           @click.stop="$emit('delete', conv.id)"
@@ -48,10 +53,7 @@
       </div>
 
       <!-- 空状态 -->
-      <div
-        v-if="conversations.length === 0"
-        class="conv-empty"
-      >
+      <div v-if="conversations.length === 0" class="conv-empty">
         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.3">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
         </svg>

@@ -1,6 +1,10 @@
 <!--
   ChatView.vue — 聊天主视图
-  包含消息列表、输入框和底部工具选择器
+
+  包含三个区域：
+    1. 消息列表（自动滚动到底部）
+    2. 输入框（支持 Enter 发送、Shift+Enter 换行、自动高度调整）
+    3. 底部栏（工具选择器 + 快捷键提示）
 -->
 <template>
   <!-- 消息列表区域 -->
@@ -40,6 +44,7 @@
           @click="handleSend"
           :disabled="isLoading || !inputText.trim()"
         >
+          <!-- 加载中显示三点动画，否则显示"发送" -->
           <span v-if="isLoading" class="typing-indicator inline">
             <span></span><span></span><span></span>
           </span>
@@ -78,29 +83,33 @@ const inputText = ref('')
 const messagesContainer = ref(null)
 const inputRef = ref(null)
 
-// 消息变化时自动滚动
+// 消息变化时自动滚动到底部
 watch(
   () => props.messages,
   () => nextTick(scrollToBottom),
   { deep: true }
 )
 
+/** 滚动消息列表到底部 */
 function scrollToBottom() {
   if (messagesContainer.value) {
     messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
   }
 }
 
+/** 发送消息（非空且非加载中时） */
 function handleSend() {
   const text = inputText.value.trim()
   if (!text || props.isLoading) return
   emit('send', text)
   inputText.value = ''
+  // 发送后重置输入框高度
   nextTick(() => {
     if (inputRef.value) inputRef.value.style.height = 'auto'
   })
 }
 
+/** 键盘事件：Enter 发送，Shift+Enter 换行 */
 function handleKeydown(e) {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
@@ -108,6 +117,7 @@ function handleKeydown(e) {
   }
 }
 
+/** 输入框自动高度调整（最大 120px） */
 function autoResize() {
   const el = inputRef.value
   if (el) {
@@ -116,6 +126,7 @@ function autoResize() {
   }
 }
 
+/** 工具选择切换（透传给父组件） */
 function onToggleTool(name) {
   emit('toggle-tool', name)
 }
