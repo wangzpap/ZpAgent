@@ -9,8 +9,10 @@
   消息数据结构（内部统一格式）：
     用户消息:  { role: 'user', content: '...' }
     助手消息:  { role: 'assistant', segments: [
-      { type: 'text', content: '...' },           — 文本片段
-      { type: 'tool_call', tool, args, observation } — 工具调用片段
+      { type: 'text', content: '...' },                        — 文本片段
+      { type: 'tool_call', tool, args, observation }            — 工具调用片段
+        observation=null 表示工具正在执行中（显示加载动画）
+        observation=string 表示工具已返回结果
     ]}
 -->
 <template>
@@ -33,6 +35,7 @@
         :selected-tools="selectedTools"
         @send="sendMessage"
         @toggle-tool="toggleTool"
+        @reload-tools="handleReloadTools"
       />
     </div>
   </div>
@@ -46,6 +49,7 @@ import {
   fetchConversations,
   fetchHistory,
   fetchTools,
+  reloadTools,
   deleteConversation,
   chatStream,
 } from './api/index.js'
@@ -205,6 +209,23 @@ function toggleTool(toolName) {
   }
 }
 
+/**
+ * 热重载 MCP 工具并刷新列表
+ *
+ * 流程：
+ *   1. 调用后端 POST /api/tools/reload 重新加载 MCP 工具
+ *   2. 重新获取工具列表并更新前端状态
+ *   3. 自动清理已不存在的工具选中状态（由 loadTools 内部处理）
+ */
+async function handleReloadTools() {
+  try {
+    await reloadTools()
+    await loadTools()
+  } catch (e) {
+    console.error('重载 MCP 工具失败:', e)
+  }
+}
+
 // ============================================
 // 发送消息 & 流式接收
 // ============================================
@@ -261,13 +282,39 @@ async function sendMessage(text) {
           }
 
           case 'thinking': {
-            // 工具调用：新建 tool_call 片段，严格按时间线插入
+            // 工具开始调用：立即显示工具名和参数，observation 为空表示尚未返回结果
+            // call_id 是唯一标识，用于和后续 tool_result 事件精确配对
             segs.push({
               type: 'tool_call',
               tool: data.tool,
+              call_id: data.call_id || '',
               args: data.args,
-              observation: data.observation,
+              observation: data.observation ?? null,
             })
+            break
+          }
+
+          case 'tool_result': {
+            // 工具执行完毕：通过 call_id 精确找到对应的 tool_call segment，填入结果
+            // 优先用 call_id 配对，回退到"最后一个尚无 observation 的 tool_call"
+            let matched = false
+            if (data.call_id) {
+              for (let k = segs.length - 1; k >= 0; k--) {
+                if (segs[k].type === 'tool_call' && segs[k].call_id === data.call_id) {
+                  segs[k].observation = data.observation
+                  matched = true
+                  break
+                }
+              }
+            }
+            if (!matched) {
+              for (let k = segs.length - 1; k >= 0; k--) {
+                if (segs[k].type === 'tool_call' && segs[k].observation == null) {
+                  segs[k].observation = data.observation
+                  break
+                }
+              }
+            }
             break
           }
 

@@ -54,10 +54,12 @@
 
       <!-- 底部栏：工具选择器 + 快捷键提示 -->
       <div class="input-footer">
+        <!-- 工具选择器：透传 toggle 和 reload 事件给父组件 -->
         <ToolSelector
           :tools="tools"
           :selected="selectedTools"
           @toggle="onToggleTool"
+          @reload="$emit('reload-tools')"
         />
         <span class="hint">Enter 发送 &middot; Shift+Enter 换行</span>
       </div>
@@ -77,7 +79,8 @@ const props = defineProps({
   selectedTools: { type: Array, default: () => [] },
 })
 
-const emit = defineEmits(['send', 'toggle-tool'])
+// 事件：send（发送消息）、toggle-tool（切换工具选中）、reload-tools（刷新 MCP 工具）
+const emit = defineEmits(['send', 'toggle-tool', 'reload-tools'])
 
 const inputText = ref('')
 const messagesContainer = ref(null)

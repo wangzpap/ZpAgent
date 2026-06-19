@@ -40,6 +40,18 @@ export async function fetchTools() {
   return res.json()
 }
 
+/**
+ * 热重载 MCP 工具（POST /api/tools/reload）
+ *
+ * 通知后端重新读取 mcp_servers.json 配置文件，
+ * 清除旧的 MCP 工具并重新加载，无需重启服务。
+ * 返回 { success, cleared, loaded, total } 结果信息。
+ */
+export async function reloadTools() {
+  const res = await fetch(`${BASE}/tools/reload`, { method: 'POST' })
+  return res.json()
+}
+
 // ============================================
 // SSE 流式聊天请求
 // ============================================
@@ -53,11 +65,12 @@ export async function fetchTools() {
  *   3. 按 SSE 协议解析（event: xxx \n data: yyy \n\n），回调 onEvent
  *
  * SSE 事件类型：
- *   - start:    对话开始（data.conversation_id）
- *   - token:    流式文本 token（data.content）
- *   - thinking: 工具调用步骤（data.tool / args / observation）
- *   - done:     对话结束（data.conversation_id / reply）
- *   - error:    错误信息（data.content）
+ *   - start:       对话开始（data.conversation_id）
+ *   - token:       流式文本 token（data.content）
+ *   - thinking:    工具开始调用时立即推送（data.tool / args，observation=null）
+ *   - tool_result: 工具执行完毕后推送结果（data.tool / args / observation）
+ *   - done:        对话结束（data.conversation_id / reply）
+ *   - error:       错误信息（data.content）
  *
  * @param {Object} payload - { message, conversation_id, selected_tools }
  * @param {Function} onEvent - 事件回调 (eventType: string, data: object) => void

@@ -85,17 +85,17 @@ defineEmits(['select', 'new-chat', 'delete'])
 }
 
 .status-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: #4ade80;
-  box-shadow: 0 0 8px rgba(74, 222, 128, 0.5);
-  animation: pulse-status 2s ease-in-out infinite;
+  background: var(--success);
+  box-shadow: 0 0 8px var(--success-glow);
+  animation: pulse-status 2.5s ease-in-out infinite;
 }
 
 @keyframes pulse-status {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.9); }
 }
 
 .new-chat-btn {
@@ -107,11 +107,16 @@ defineEmits(['select', 'new-chat', 'delete'])
 
 .conv-icon {
   flex-shrink: 0;
-  opacity: 0.5;
+  opacity: 0.4;
+  transition: opacity 0.2s, color 0.2s;
+}
+
+.conv-item:hover .conv-icon {
+  opacity: 0.7;
 }
 
 .conv-item.active .conv-icon {
-  opacity: 0.9;
+  opacity: 0.95;
   color: var(--accent);
 }
 
@@ -119,17 +124,18 @@ defineEmits(['select', 'new-chat', 'delete'])
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  padding: 48px 16px;
+  gap: 14px;
+  padding: 52px 16px;
   color: var(--text-muted);
   font-size: 12px;
 }
 
 .sidebar-footer {
-  padding: 12px 20px;
+  padding: 14px 22px;
   border-top: 1px solid var(--border);
   font-size: 11px;
   color: var(--text-muted);
-  opacity: 0.5;
+  opacity: 0.45;
+  letter-spacing: 0.3px;
 }
 </style>

@@ -3,6 +3,11 @@
 
   放置在输入框底部区域，点击按钮展开浮动面板进行工具多选。
   使用 Teleport 将下拉面板渲染到 body，避免被父组件 overflow 裁切。
+
+  功能：
+    - 多选/取消选择工具（toggle 事件）
+    - 全选/取消全选
+    - 刷新 MCP 工具（reload 事件，调用后端热重载接口）
 -->
 <template>
   <div class="tool-selector" ref="selectorRef">
@@ -31,12 +36,26 @@
         <div class="tool-overlay" @click="isOpen = false" />
         <!-- 下拉内容 -->
         <div class="tool-dropdown" :style="dropdownStyle" @click.stop>
-          <!-- 头部：标题 + 全选/取消全选 -->
+          <!-- 头部：标题 + 刷新 / 全选/取消全选 -->
           <div class="tool-dropdown-header">
             <span>已启用工具</span>
-            <button v-if="tools.length > 0" class="toggle-all" @click="toggleAll">
-              {{ allSelected ? '取消全选' : '全选' }}
-            </button>
+            <div class="header-actions">
+              <button
+                class="refresh-btn"
+                :class="{ spinning: isReloading }"
+                @click="handleReload"
+                :disabled="isReloading"
+                title="刷新 MCP 工具"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="23 4 23 10 17 10"/>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                </svg>
+              </button>
+              <button v-if="tools.length > 0" class="toggle-all" @click="toggleAll">
+                {{ allSelected ? '取消全选' : '全选' }}
+              </button>
+            </div>
           </div>
 
           <!-- 空状态 -->
@@ -82,9 +101,11 @@ const props = defineProps({
   selected: { type: Array, default: () => [] },  // 已选工具名称列表
 })
 
-const emit = defineEmits(['toggle'])
+// 事件：toggle（切换工具选中）、reload（刷新 MCP 工具列表）
+const emit = defineEmits(['toggle', 'reload'])
 
 const isOpen = ref(false)
+const isReloading = ref(false)   // 刷新按钮的加载状态（控制旋转动画）
 const triggerRef = ref(null)
 const dropdownStyle = ref({})
 
@@ -121,6 +142,24 @@ function handleResize() {
 onMounted(() => window.addEventListener('resize', handleResize))
 onBeforeUnmount(() => window.removeEventListener('resize', handleResize))
 
+/**
+ * 刷新 MCP 工具
+ *
+ * 触发 reload 事件通知父组件调用后端重载接口，
+ * 同时显示旋转动画给用户操作反馈（至少 0.6 秒）。
+ */
+async function handleReload() {
+  if (isReloading.value) return
+  isReloading.value = true
+  try {
+    await emit('reload')
+  } finally {
+    // 至少显示 0.6 秒旋转动画，确保用户能看到加载反馈
+    await new Promise((r) => setTimeout(r, 600))
+    isReloading.value = false
+  }
+}
+
 /** 全选 / 取消全选 */
 function toggleAll() {
   if (allSelected.value) {
@@ -144,7 +183,7 @@ function shortDesc(desc) {
 
 <style scoped>
 .icon-svg {
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .tool-trigger.open .icon-svg {
@@ -152,7 +191,7 @@ function shortDesc(desc) {
 }
 
 .arrow-svg {
-  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .tool-trigger.open .arrow-svg {
@@ -163,6 +202,47 @@ function shortDesc(desc) {
   display: flex;
   flex-direction: column;
   align-items: center;
+  gap: 10px;
+}
+
+/* 头部操作区 */
+.header-actions {
+  display: flex;
+  align-items: center;
   gap: 8px;
+}
+
+/* 刷新按钮 */
+.refresh-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-xxs);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.refresh-btn:hover:not(:disabled) {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.refresh-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.refresh-btn.spinning svg {
+  animation: spin 0.75s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
 }
 </style>
