@@ -19,7 +19,7 @@ ZpAgent-Python/
 │   │   ├── __init__.py              # LangChain @tool 导出
 │   │   ├── builtin_tools.py         # 内置工具（位置/时间/天气）
 │   │   └── registry.py             # 工具注册表
-│   ├── memory/
+│   ├── conversation/
 │   │   └── __init__.py              # 会话注册表（ConversationRegistry）
 │   ├── models/
 │   │   └── __init__.py              # Pydantic 数据模型

@@ -34,6 +34,19 @@ export async function deleteConversation(conversationId) {
   return res.json()
 }
 
+/**
+ * 清空指定会话的消息历史（保留会话本身）
+ *
+ * 删除 checkpointer 中该会话的对话上下文，LLM 将丧失记忆。
+ * 会话条目保留在侧边栏列表中。
+ */
+export async function clearConversationMessages(conversationId) {
+  const res = await fetch(`${BASE}/conversations/${conversationId}/messages`, {
+    method: 'DELETE',
+  })
+  return res.json()
+}
+
 /** 获取所有可用工具列表 */
 export async function fetchTools() {
   const res = await fetch(`${BASE}/tools`)

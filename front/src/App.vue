@@ -33,9 +33,11 @@
         :is-loading="isLoading"
         :tools="availableTools"
         :selected-tools="selectedTools"
+        :conversation-id="currentConversationId"
         @send="sendMessage"
         @toggle-tool="toggleTool"
         @reload-tools="handleReloadTools"
+        @clear-history="handleClearHistory"
       />
     </div>
   </div>
@@ -51,6 +53,7 @@ import {
   fetchTools,
   reloadTools,
   deleteConversation,
+  clearConversationMessages,
   chatStream,
 } from './api/index.js'
 
@@ -192,6 +195,18 @@ async function handleDeleteConversation(convId) {
     if (currentConversationId.value === convId) newChat()
   } catch (e) {
     console.error('删除会话失败:', e)
+  }
+}
+
+/** 清空当前会话的消息上下文（保留会话条目） */
+async function handleClearHistory() {
+  const convId = currentConversationId.value
+  if (!convId) return
+  try {
+    await clearConversationMessages(convId)
+    messages.value = []
+  } catch (e) {
+    console.error('清空对话上下文失败:', e)
   }
 }
 

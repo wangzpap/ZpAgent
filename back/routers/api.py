@@ -16,6 +16,7 @@ FastAPI 路由体系说明：
   GET  /api/conversations              — 获取所有会话列表
   GET  /api/conversations/{id}         — 获取会话详情
   DELETE /api/conversations/{id}       — 删除会话
+  DELETE /api/conversations/{id}/messages — 清空会话消息历史
   GET  /api/tools                      — 获取可用工具列表
   POST /api/tools/reload               — 热重载 MCP 工具
 """
@@ -184,6 +185,25 @@ async def delete_conversation(conversation_id: str, req: Request):
     """
     agent = req.app.state.agent
     success = await agent.delete_conversation(conversation_id)
+    if not success:
+        return JSONResponse(
+            status_code=404,
+            content={"error": "会话不存在", "conversation_id": conversation_id},
+        )
+    return {"success": True}
+
+
+@router.delete("/conversations/{conversation_id}/messages")
+async def clear_conversation_messages(conversation_id: str, req: Request):
+    """
+    清空指定会话的消息历史（保留会话本身）
+
+    删除 checkpointer 中该会话的所有对话上下文，使 LLM 丧失记忆。
+    会话条目保留在侧边栏列表中，标题不变。
+    不存在时返回 HTTP 404 状态码。
+    """
+    agent = req.app.state.agent
+    success = await agent.clear_conversation(conversation_id)
     if not success:
         return JSONResponse(
             status_code=404,

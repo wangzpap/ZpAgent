@@ -7,7 +7,7 @@ ReAct Agent 核心引擎（基于 LangGraph）
 架构概览：
   - agent/graph.py: 使用 create_agent 构建 LangGraph 状态图
   - agent/__init__.py: 编排层，负责会话管理、流式事件适配
-  - memory/: 会话元数据注册表（ConversationRegistry）
+  - conversation/: 会话元数据注册表（ConversationRegistry）
   - tools/: 工具注册表 + 内置工具
 
 会话记忆机制（双层架构）：
@@ -55,7 +55,7 @@ from langgraph.errors import GraphRecursionError
 from config import settings
 from tools.registry import ToolRegistry
 from tools.mcp_loader import load_mcp_tools
-from memory import ConversationRegistry
+from conversation import ConversationRegistry
 from agent.graph import build_agent_graph, DEFAULT_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -485,6 +485,28 @@ class ReActAgent:
             True 表示删除成功，False 表示会话不存在
         """
         return await self.registry.delete_conversation(conversation_id)
+
+    async def clear_conversation(self, conversation_id: str) -> bool:
+        """
+        清空指定会话的消息历史（保留会话本身）
+
+        通过 InMemorySaver.adelete_thread 删除 checkpointer 中该会话的所有
+        checkpoint 数据，使 LLM 丧失该会话的上下文记忆。
+        会话元数据（标题、时间戳）保留在 ConversationRegistry 中，
+        前端侧边栏的会话列表不受影响。
+
+        清空后用户再发消息时，Agent 会以空白上下文开始对话。
+
+        Args:
+            conversation_id: 要清空的会话 ID
+
+        Returns:
+            True 表示清空成功，False 表示会话不存在
+        """
+        if not await self.registry.conversation_exists(conversation_id):
+            return False
+        await self.checkpointer.adelete_thread(conversation_id)
+        return True
 
     @staticmethod
     def _format_message(msg) -> Dict[str, Any]:
