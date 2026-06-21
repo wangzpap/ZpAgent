@@ -39,6 +39,13 @@
         @reload-tools="handleReloadTools"
         @clear-history="handleClearHistory"
       />
+
+      <!-- HITL 审批面板：当 Agent 的工具调用需要人工审批时显示 -->
+      <ApprovalPanel
+        v-if="pendingActions"
+        :actions="pendingActions"
+        @submit="handleApprovalSubmit"
+      />
     </div>
   </div>
 </template>
@@ -47,6 +54,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import ConversationList from './components/ConversationList.vue'
 import ChatView from './views/ChatView.vue'
+import ApprovalPanel from './components/ApprovalPanel.vue'
 import {
   fetchConversations,
   fetchHistory,
@@ -55,6 +63,7 @@ import {
   deleteConversation,
   clearConversationMessages,
   chatStream,
+  submitDecisions,
 } from './api/index.js'
 
 // ============================================
@@ -66,7 +75,108 @@ const messages = ref([])               // 当前会话的消息列表
 const availableTools = ref([])         // 后端可用工具列表
 const selectedTools = ref([])          // 用户选中的工具名称列表
 const isLoading = ref(false)           // 是否正在等待 AI 响应
+const pendingActions = ref(null)       // HITL 待审批的工具调用列表（null 表示无审批）
 let abortController = null             // 用于取消进行中的请求
+
+/**
+ * 审批状态缓存：按会话 ID 保存/恢复待审批状态
+ *
+ * 当用户在一个会话中触发 HITL 审批后切换到另一个会话时，
+ * 将当前 pendingActions 保存到 Map 中；切换回来时自动恢复。
+ *
+ * key: conversation_id
+ * value: { actions: Array } — 待审批的工具调用列表
+ */
+const pendingApprovalStore = new Map()
+
+/**
+ * 处理单个 SSE 事件并更新助手消息的 segments 数组
+ *
+ * 被 sendMessage（新消息）和 handleApprovalSubmit（审批恢复）共用，
+ * 避免两处重复相同的事件解析逻辑。
+ *
+ * @param {Object} assistantMsg - reactive 助手消息对象（含 segments 数组）
+ * @param {string} eventType - SSE 事件类型
+ * @param {Object} data - 事件数据
+ * @returns {'approval_required'|null} 若事件为 approval_required 则返回该字符串，否则 null
+ */
+function processSseEvent(assistantMsg, eventType, data) {
+  const segs = assistantMsg.segments
+  switch (eventType) {
+    case 'start':
+      currentConversationId.value = data.conversation_id
+      break
+
+    case 'token': {
+      const last = segs[segs.length - 1]
+      if (last && last.type === 'text') {
+        last.content += data.content
+      } else {
+        segs.push({ type: 'text', content: data.content })
+      }
+      break
+    }
+
+    case 'thinking': {
+      segs.push({
+        type: 'tool_call',
+        tool: data.tool,
+        call_id: data.call_id || '',
+        args: data.args,
+        observation: data.observation ?? null,
+      })
+      break
+    }
+
+    case 'tool_result': {
+      let matched = false
+      if (data.call_id) {
+        for (let k = segs.length - 1; k >= 0; k--) {
+          if (segs[k].type === 'tool_call' && segs[k].call_id === data.call_id) {
+            segs[k].observation = data.observation
+            matched = true
+            break
+          }
+        }
+      }
+      if (!matched) {
+        for (let k = segs.length - 1; k >= 0; k--) {
+          if (segs[k].type === 'tool_call' && segs[k].observation == null) {
+            segs[k].observation = data.observation
+            break
+          }
+        }
+      }
+      break
+    }
+
+    case 'done': {
+      for (let k = segs.length - 1; k >= 0; k--) {
+        if (segs[k].type === 'text') {
+          segs[k].content = segs[k].content.trim()
+          break
+        }
+      }
+      break
+    }
+
+    case 'error': {
+      const errText = `\n[错误] ${data.content}`
+      const lastE = segs[segs.length - 1]
+      if (lastE && lastE.type === 'text') {
+        lastE.content += errText
+      } else {
+        segs.push({ type: 'text', content: errText })
+      }
+      break
+    }
+
+    case 'approval_required':
+      // 返回标记，由调用方处理（设置 pendingActions 或再次弹出审批面板）
+      return 'approval_required'
+  }
+  return null
+}
 
 // ============================================
 // 初始化：加载会话列表和工具列表
@@ -114,10 +224,30 @@ async function loadTools() {
 
 /** 选择并加载指定会话的历史消息 */
 async function selectConversation(convId) {
+  // ---- 保存当前会话的审批状态（如果有未提交的审批） ----
+  if (pendingActions.value && currentConversationId.value) {
+    pendingApprovalStore.set(currentConversationId.value, {
+      actions: pendingActions.value,
+    })
+  }
+
   currentConversationId.value = convId
+
   try {
     const data = await fetchHistory(convId)
     messages.value = processHistoryMessages(data.messages || [])
+
+    // ---- 恢复审批状态 ----
+    // 优先使用内存缓存（切换会话时保存的）；
+    // 若缓存中没有，则检查后端返回的 pending_actions（页面刷新后从 checkpointer 恢复）
+    const cached = pendingApprovalStore.get(convId)
+    if (cached) {
+      pendingActions.value = cached.actions
+    } else if (data.pending_actions && data.pending_actions.length > 0) {
+      pendingActions.value = data.pending_actions
+    } else {
+      pendingActions.value = null
+    }
   } catch (e) {
     console.error('加载会话历史失败:', e)
   }
@@ -183,16 +313,29 @@ function processHistoryMessages(raw) {
 
 /** 新建对话（清空当前选中状态） */
 function newChat() {
+  // 保存当前会话的审批状态
+  if (pendingActions.value && currentConversationId.value) {
+    pendingApprovalStore.set(currentConversationId.value, {
+      actions: pendingActions.value,
+    })
+  }
   currentConversationId.value = null
   messages.value = []
+  // 新对话没有待审批
+  pendingActions.value = null
 }
 
 /** 删除指定会话并刷新列表 */
 async function handleDeleteConversation(convId) {
   try {
     await deleteConversation(convId)
+    // 清除该会话的审批状态缓存
+    pendingApprovalStore.delete(convId)
     await loadConversations()
-    if (currentConversationId.value === convId) newChat()
+    if (currentConversationId.value === convId) {
+      pendingActions.value = null
+      newChat()
+    }
   } catch (e) {
     console.error('删除会话失败:', e)
   }
@@ -205,6 +348,9 @@ async function handleClearHistory() {
   try {
     await clearConversationMessages(convId)
     messages.value = []
+    // 对话上下文被清除，审批状态也不再有意义
+    pendingActions.value = null
+    pendingApprovalStore.delete(convId)
   } catch (e) {
     console.error('清空对话上下文失败:', e)
   }
@@ -257,6 +403,12 @@ async function handleReloadTools() {
 async function sendMessage(text) {
   if (isLoading.value || !text.trim()) return
 
+  // 如果当前有未处理的审批面板，清除它（后端会自动拒绝挂起的工具调用）
+  if (pendingActions.value && currentConversationId.value) {
+    pendingApprovalStore.delete(currentConversationId.value)
+  }
+  pendingActions.value = null
+
   // 添加用户消息
   messages.value.push({ role: 'user', content: text })
 
@@ -278,82 +430,10 @@ async function sendMessage(text) {
         selected_tools: selectedTools.value,
       },
       (eventType, data) => {
-        const segs = assistantMsg.segments
-        switch (eventType) {
-          case 'start':
-            // 获取后端分配的会话 ID
-            currentConversationId.value = data.conversation_id
-            break
-
-          case 'token': {
-            // 流式文本：追加到最后一个 text 片段，或新建一个
-            const last = segs[segs.length - 1]
-            if (last && last.type === 'text') {
-              last.content += data.content
-            } else {
-              segs.push({ type: 'text', content: data.content })
-            }
-            break
-          }
-
-          case 'thinking': {
-            // 工具开始调用：立即显示工具名和参数，observation 为空表示尚未返回结果
-            // call_id 是唯一标识，用于和后续 tool_result 事件精确配对
-            segs.push({
-              type: 'tool_call',
-              tool: data.tool,
-              call_id: data.call_id || '',
-              args: data.args,
-              observation: data.observation ?? null,
-            })
-            break
-          }
-
-          case 'tool_result': {
-            // 工具执行完毕：通过 call_id 精确找到对应的 tool_call segment，填入结果
-            // 优先用 call_id 配对，回退到"最后一个尚无 observation 的 tool_call"
-            let matched = false
-            if (data.call_id) {
-              for (let k = segs.length - 1; k >= 0; k--) {
-                if (segs[k].type === 'tool_call' && segs[k].call_id === data.call_id) {
-                  segs[k].observation = data.observation
-                  matched = true
-                  break
-                }
-              }
-            }
-            if (!matched) {
-              for (let k = segs.length - 1; k >= 0; k--) {
-                if (segs[k].type === 'tool_call' && segs[k].observation == null) {
-                  segs[k].observation = data.observation
-                  break
-                }
-              }
-            }
-            break
-          }
-
-          case 'done': {
-            // 清理最后一个 text 片段的首尾空白
-            for (let k = segs.length - 1; k >= 0; k--) {
-              if (segs[k].type === 'text') {
-                segs[k].content = segs[k].content.trim()
-                break
-              }
-            }
-            break
-          }
-
-          case 'error': {
-            const errText = `\n[错误] ${data.content}`
-            const lastE = segs[segs.length - 1]
-            if (lastE && lastE.type === 'text') {
-              lastE.content += errText
-            } else {
-              segs.push({ type: 'text', content: errText })
-            }
-            break
-          }
+        const result = processSseEvent(assistantMsg, eventType, data)
+        if (result === 'approval_required') {
+          // 工具调用需要审批 → 设置待审批列表，显示审批面板
+          pendingActions.value = data.actions
         }
       },
       abortController.signal,
@@ -370,6 +450,59 @@ async function sendMessage(text) {
       } else {
         segs.push({ type: 'text', content: errText })
       }
+    }
+  } finally {
+    isLoading.value = false
+    abortController = null
+    await loadConversations()
+  }
+}
+
+/**
+ * 处理审批面板提交的决策
+ *
+ * 用户在 ApprovalPanel 中对所有待审批工具做出决策后触发。
+ * 将决策提交给后端 POST /api/chat/decide，恢复 Agent 执行并继续接收 SSE 流。
+ * 恢复后若再次触发 HITL 中断，会重新弹出审批面板（支持多轮审批）。
+ *
+ * @param {Array} decisions - 决策数组，与 pendingActions 一一对应
+ *   每项格式：{ type: 'approve' } | { type: 'edit', edited_action: {...} } | { type: 'reject', message: '...' }
+ */
+async function handleApprovalSubmit(decisions) {
+  const convId = currentConversationId.value
+  if (!convId) return
+
+  // 隐藏审批面板，并从缓存中移除
+  pendingActions.value = null
+  pendingApprovalStore.delete(convId)
+
+  isLoading.value = true
+  abortController = new AbortController()
+
+  // 创建新的助手消息用于展示恢复执行后的流式输出
+  const assistantMsg = reactive({
+    role: 'assistant',
+    segments: [],
+  })
+  messages.value.push(assistantMsg)
+
+  try {
+    await submitDecisions(
+      { conversation_id: convId, decisions },
+      (eventType, data) => {
+        const result = processSseEvent(assistantMsg, eventType, data)
+        if (result === 'approval_required') {
+          // Agent 恢复执行后再次触发了需要审批的工具调用（多轮审批）
+          pendingActions.value = data.actions
+        }
+      },
+      abortController.signal,
+    )
+  } catch (e) {
+    if (e.name !== 'AbortError') {
+      console.error('审批提交失败:', e)
+      const segs = assistantMsg.segments
+      segs.push({ type: 'text', content: '\n[网络错误] 审批提交失败，请检查后端服务。' })
     }
   } finally {
     isLoading.value = false

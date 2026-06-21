@@ -12,6 +12,7 @@ API 文档:
     启动后访问 http://localhost:8000/docs 查看 Swagger UI
 """
 
+import logging
 import os
 # asynccontextmanager 是 Python 的异步上下文管理器装饰器
 # 它允许我们用 async/await + yield 来定义"进入前做什么、退出后做什么"
@@ -27,6 +28,21 @@ from fastapi.middleware.cors import CORSMiddleware
 from agent import ReActAgent
 from config import settings
 from routers.api import router
+
+logger = logging.getLogger(__name__)
+
+# ---- 全局日志配置 ----
+# 必须在 import agent 等模块之前执行，否则子模块的 logger 会继承默认的 WARNING 级别
+# 格式: [时间] [级别] [模块名] 消息内容
+# 示例: [2026-06-21 14:30:12] [INFO ] [agent          ] 收到请求: message='...'
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="[%(asctime)s] [%(levelname)-5s] [%(name)-14s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+# 降低第三方库的日志级别，避免刷屏（只看 WARNING 及以上）
+for _noisy in ("httpx", "httpcore", "openai", "urllib3", "asyncio", "langchain", "langgraph"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
 
 # os.getenv(key, default) 从系统环境变量中读取值，读不到则用 default
 # 这里判断当前是否为开发环境，用于控制 CORS 策略和热重载
@@ -62,11 +78,13 @@ async def lifespan(app: FastAPI):
     print(f"  工具:     {tool_names}")
     print(f"  文档:     http://localhost:{settings.PORT}/docs")
     print("=" * 55)
+    logger.info("ZpAgent 服务启动完成，日志级别: DEBUG，已加载 %d 个工具", len(tools_info))
 
     # yield 是 Python 生成器的关键字，这里表示"暂停，把控制权交还给 FastAPI"
     # 当 FastAPI 关闭时，会继续执行 yield 后面的代码
     yield
 
+    logger.info("ZpAgent 服务正在关闭...")
     print("ZpAgent 服务已关闭")
 
 

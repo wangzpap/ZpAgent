@@ -89,6 +89,53 @@ export async function reloadTools() {
  * @param {Function} onEvent - 事件回调 (eventType: string, data: object) => void
  * @param {AbortSignal} signal - 用于取消请求的信号（来自 AbortController）
  */
+/**
+ * 提交人工审批决策并通过 SSE 接收后续流式响应
+ *
+ * 当 POST /api/chat 返回 approval_required 事件后调用此函数。
+ * 将用户的审批决策发送给后端，后端恢复 Agent 执行并继续推送 SSE 事件。
+ * 返回的 SSE 事件格式与 chatStream 完全一致。
+ *
+ * @param {Object} payload - { conversation_id, decisions: [{type, edited_action?, message?}] }
+ * @param {Function} onEvent - 事件回调 (eventType, data) => void
+ * @param {AbortSignal} signal - 取消信号
+ */
+export async function submitDecisions(payload, onEvent, signal) {
+  const response = await fetch(`${BASE}/chat/decide`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal,
+  })
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+    const events = buffer.split('\n\n')
+    buffer = events.pop()
+
+    for (const eventStr of events) {
+      if (!eventStr.trim()) continue
+      let eventType = ''
+      let data = ''
+      for (const line of eventStr.split('\n')) {
+        if (line.startsWith('event: ')) eventType = line.slice(7).trim()
+        else if (line.startsWith('data: ')) data = line.slice(6)
+      }
+      if (eventType && data) {
+        try { onEvent(eventType, JSON.parse(data)) }
+        catch (e) { console.error('SSE parse error:', e, eventStr) }
+      }
+    }
+  }
+}
+
 export async function chatStream(payload, onEvent, signal) {
   const response = await fetch(`${BASE}/chat`, {
     method: 'POST',

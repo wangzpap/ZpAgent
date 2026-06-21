@@ -130,3 +130,44 @@ class ToolInfo(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(
         default=None, description="工具参数的 JSON Schema"
     )
+
+
+class Decision(BaseModel):
+    """
+    单个人工审批决策
+
+    前端审批面板提交的用户决策，对应 HITL 中间件的四种决策类型：
+      - approve: 同意按原参数执行工具
+      - edit:    修改工具参数后执行（需附带 edited_action）
+      - reject:  拒绝执行（可附带 message 说明原因）
+      - respond: 人工消息直接作为工具返回值（需附带 message）
+    """
+    # 决策类型：approve / edit / reject / respond
+    type: Literal["approve", "edit", "reject", "respond"] = Field(
+        ..., description="决策类型"
+    )
+    # edit 类型时使用：修改后的工具调用
+    # 格式: {"name": "工具名", "args": {"参数名": "新值"}}
+    edited_action: Optional[Dict[str, Any]] = Field(
+        default=None, description="编辑后的工具调用（仅 edit 类型使用）"
+    )
+    # reject / respond 类型时使用：拒绝原因或人工回复
+    message: Optional[str] = Field(
+        default=None, description="拒绝原因或人工回复（reject/respond 类型使用）"
+    )
+
+
+class DecideRequest(BaseModel):
+    """
+    审批决策请求
+
+    前端 POST /api/chat/decide 发送的数据结构。
+    包含会话 ID 和对每个待审批工具的决策。
+    decisions 列表的顺序必须与 approval_required 事件中 actions 列表的顺序一致。
+    """
+    conversation_id: str = Field(
+        ..., description="会话 ID（对应 checkpointer 中的 thread_id）"
+    )
+    decisions: List[Decision] = Field(
+        ..., min_length=1, description="决策列表，顺序必须与 actions 列表一致"
+    )

@@ -12,6 +12,7 @@ FastAPI 路由体系说明：
 
 接口列表：
   POST /api/chat                      — 聊天（SSE 流式输出）
+  POST /api/chat/decide               — 提交审批决策并继续执行（SSE 流式输出）
   GET  /api/messages/{conversation_id} — 获取会话消息历史
   GET  /api/conversations              — 获取所有会话列表
   GET  /api/conversations/{id}         — 获取会话详情
@@ -33,7 +34,7 @@ from fastapi.responses import StreamingResponse, JSONResponse
 
 # ChatRequest: Pydantic 模型，FastAPI 会自动将 JSON 请求体解析为这个模型
 # 如果请求数据不符合模型定义（如缺少必填字段），FastAPI 自动返回 422 错误
-from models import ChatRequest
+from models import ChatRequest, DecideRequest
 
 logger = logging.getLogger(__name__)
 
@@ -113,9 +114,60 @@ async def chat(request: ChatRequest, req: Request):
         event_stream(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",   # 禁止缓存（SSE 必须实时推送）
-            "Connection": "keep-alive",     # 保持长连接
-            "X-Accel-Buffering": "no",      # 禁用 Nginx 代理缓冲（否则前端可能收不到实时数据）
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# ============================================
+# 审批决策（Human-in-the-Loop）
+# ============================================
+@router.post("/chat/decide")
+async def chat_decide(request: DecideRequest, req: Request):
+    """
+    提交人工审批决策并继续 Agent 执行（SSE 流式输出）
+
+    当 POST /api/chat 返回 approval_required 事件时，前端展示审批面板，
+    用户对每个待审批的工具调用做出决策后，调用此接口恢复执行。
+
+    决策类型：
+      - approve: 同意按原参数执行工具
+      - edit:    修改工具参数后执行（需附带 edited_action）
+      - reject:  拒绝执行（可附带 message 说明原因）
+      - respond: 人工消息直接作为工具返回值
+
+    恢复后 Agent 继续 ReAct 循环，可能产生更多工具调用（再次触发审批）
+    或输出最终回答。SSE 事件格式与 /api/chat 完全一致。
+
+    注意：decisions 列表的顺序必须与 approval_required 事件中 actions 列表一致。
+    """
+    agent = req.app.state.agent
+
+    async def decision_stream():
+        try:
+            async for event in agent.resume(
+                conversation_id=request.conversation_id,
+                decisions=[d.model_dump(exclude_none=True) for d in request.decisions],
+            ):
+                event_type = event["type"]
+                event_data = json.dumps(event["data"], ensure_ascii=False)
+                yield f"event: {event_type}\ndata: {event_data}\n\n"
+        except Exception as e:
+            logger.exception("审批决策流异常")
+            error_data = json.dumps(
+                {"content": f"审批决策处理异常: {e}"}, ensure_ascii=False
+            )
+            yield f"event: error\ndata: {error_data}\n\n"
+
+    return StreamingResponse(
+        decision_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
         },
     )
 

@@ -987,6 +987,311 @@ button:focus-visible {
 }
 
 /* ============================================
+   HITL 审批面板
+   ============================================ */
+.approval-panel {
+  margin: 0 28px 20px;
+  max-width: 780px;
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+  background: var(--bg-card);
+  border: 1px solid rgba(232, 187, 94, 0.25);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  animation: message-in 0.35s var(--ease-out);
+  box-shadow: var(--shadow-card), 0 0 20px rgba(232, 187, 94, 0.08);
+  position: relative;
+  z-index: 2;
+}
+
+.approval-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px;
+  background: linear-gradient(135deg, rgba(232, 187, 94, 0.10) 0%, rgba(232, 187, 94, 0.04) 100%);
+  border-bottom: 1px solid rgba(232, 187, 94, 0.18);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: 0.3px;
+}
+
+.approval-header svg {
+  flex-shrink: 0;
+}
+
+.approval-card {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  transition: background var(--transition-fast);
+}
+
+.approval-card:last-of-type {
+  border-bottom: none;
+}
+
+.approval-card:hover {
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.approval-tool-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.tool-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  background: var(--accent-dim);
+  border: 1px solid var(--border-accent);
+  border-radius: var(--radius-xxs);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  color: var(--accent);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.tool-args {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xxs);
+  padding: 8px 12px;
+  margin: 0;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.6;
+  flex: 1;
+  min-width: 0;
+}
+
+/* 决策状态显示 */
+.decision-status {
+  display: flex;
+  align-items: center;
+  padding: 8px 14px;
+  border-radius: var(--radius-xxs);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.decision-status.approve {
+  background: rgba(74, 222, 128, 0.10);
+  color: var(--success);
+  border: 1px solid rgba(74, 222, 128, 0.20);
+}
+
+.decision-status.edit {
+  background: rgba(232, 187, 94, 0.10);
+  color: var(--accent);
+  border: 1px solid rgba(232, 187, 94, 0.20);
+}
+
+.decision-status.reject {
+  background: rgba(239, 107, 107, 0.10);
+  color: var(--danger);
+  border: 1px solid rgba(239, 107, 107, 0.20);
+}
+
+/* 操作按钮组 */
+.approval-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.approve-btn,
+.edit-btn,
+.reject-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: var(--radius-xxs);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  border: 1px solid transparent;
+}
+
+.approve-btn {
+  background: rgba(74, 222, 128, 0.12);
+  color: var(--success);
+  border-color: rgba(74, 222, 128, 0.25);
+}
+
+.approve-btn:hover {
+  background: rgba(74, 222, 128, 0.22);
+  border-color: var(--success);
+  box-shadow: 0 2px 8px rgba(74, 222, 128, 0.15);
+}
+
+.edit-btn {
+  background: rgba(232, 187, 94, 0.10);
+  color: var(--accent);
+  border-color: var(--border-accent);
+}
+
+.edit-btn:hover {
+  background: rgba(232, 187, 94, 0.20);
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px rgba(232, 187, 94, 0.12);
+}
+
+.reject-btn {
+  background: rgba(239, 107, 107, 0.10);
+  color: var(--danger);
+  border-color: rgba(239, 107, 107, 0.25);
+}
+
+.reject-btn:hover {
+  background: rgba(239, 107, 107, 0.20);
+  border-color: var(--danger);
+  box-shadow: 0 2px 8px rgba(239, 107, 107, 0.12);
+}
+
+/* 编辑 / 拒绝 区域 */
+.edit-area,
+.reject-area {
+  margin-top: 12px;
+  animation: message-in 0.25s var(--ease-out);
+}
+
+.edit-textarea,
+.reject-textarea {
+  width: 100%;
+  padding: 10px 14px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-xxs);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-primary);
+  resize: vertical;
+  outline: none;
+  line-height: 1.6;
+  transition: border-color var(--transition-fast);
+}
+
+.edit-textarea:focus,
+.reject-textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+
+.reject-textarea {
+  font-family: var(--font-ui);
+}
+
+.edit-confirm-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.edit-confirm-btn,
+.reject-confirm-btn {
+  padding: 5px 14px;
+  border-radius: var(--radius-xxs);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.edit-confirm-btn {
+  background: rgba(232, 187, 94, 0.15);
+  color: var(--accent);
+  border: 1px solid var(--border-accent);
+}
+
+.edit-confirm-btn:hover {
+  background: rgba(232, 187, 94, 0.28);
+}
+
+.reject-confirm-btn {
+  background: rgba(239, 107, 107, 0.15);
+  color: var(--danger);
+  border: 1px solid rgba(239, 107, 107, 0.30);
+}
+
+.reject-confirm-btn:hover {
+  background: rgba(239, 107, 107, 0.28);
+}
+
+.edit-cancel-btn {
+  padding: 5px 14px;
+  background: transparent;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-xxs);
+  font-size: 12px;
+  font-family: var(--font-ui);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.edit-cancel-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-light);
+  background: var(--bg-hover);
+}
+
+/* 提交决策按钮 */
+.submit-decisions-btn {
+  width: 100%;
+  padding: 13px 20px;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
+  color: var(--bg-base);
+  border: none;
+  font-size: 13px;
+  font-weight: 650;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  box-shadow: 0 2px 10px var(--accent-glow);
+  position: relative;
+  overflow: hidden;
+}
+
+.submit-decisions-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.22) 0%, transparent 50%);
+  opacity: 0;
+  transition: opacity var(--transition-normal);
+}
+
+.submit-decisions-btn:hover:not(:disabled) {
+  box-shadow: 0 6px 20px var(--accent-glow);
+}
+
+.submit-decisions-btn:hover:not(:disabled)::before {
+  opacity: 1;
+}
+
+.submit-decisions-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* ============================================
    响应式适配（窄屏自动折叠侧边栏）
    ============================================ */
 @media (max-width: 768px) {
