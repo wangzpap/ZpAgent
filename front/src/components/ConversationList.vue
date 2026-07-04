@@ -42,7 +42,7 @@
         <!-- 删除按钮（hover 时显示） -->
         <button
           class="delete-btn"
-          @click.stop="$emit('delete', conv.id)"
+          @click.stop="requestDelete(conv.id)"
           title="删除"
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -65,16 +65,62 @@
     <div class="sidebar-footer">
       <span>ZpAgent v1.0</span>
     </div>
+
+    <!-- 删除确认弹窗 -->
+    <ConfirmDialog
+      :visible="showDeleteConfirm"
+      title="删除对话"
+      :message="`确定要删除「${deleteTargetTitle}」吗？删除后无法恢复。`"
+      confirm-text="删除"
+      cancel-text="取消"
+      :danger="true"
+      @confirm="confirmDelete"
+      @cancel="cancelDelete"
+    />
   </aside>
 </template>
 
 <script setup>
-defineProps({
+import { ref, computed } from 'vue'
+import ConfirmDialog from './ConfirmDialog.vue'
+
+const props = defineProps({
   conversations: { type: Array, default: () => [] },
   currentId:     { type: String, default: null },
 })
 
-defineEmits(['select', 'new-chat', 'delete'])
+const emit = defineEmits(['select', 'new-chat', 'delete'])
+
+// ---- 删除确认弹窗状态 ----
+const showDeleteConfirm = ref(false)
+const deleteTargetId = ref(null)
+
+/** 待删除会话的标题（用于弹窗提示文案） */
+const deleteTargetTitle = computed(() => {
+  const conv = props.conversations.find((c) => c.id === deleteTargetId.value)
+  return conv?.title || '新对话'
+})
+
+/** 点击删除按钮 → 弹出确认弹窗 */
+function requestDelete(convId) {
+  deleteTargetId.value = convId
+  showDeleteConfirm.value = true
+}
+
+/** 确认删除 → 触发 delete 事件并关闭弹窗 */
+function confirmDelete() {
+  if (deleteTargetId.value) {
+    emit('delete', deleteTargetId.value)
+  }
+  showDeleteConfirm.value = false
+  deleteTargetId.value = null
+}
+
+/** 取消删除 */
+function cancelDelete() {
+  showDeleteConfirm.value = false
+  deleteTargetId.value = null
+}
 </script>
 
 <style scoped>
