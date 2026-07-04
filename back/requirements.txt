@@ -19,3 +19,7 @@ langchain-mcp-adapters>=0.3.0,<1.0
 # 数据校验 & 配置管理
 pydantic>=2.9.0,<3.0
 pydantic-settings>=2.5.0,<3.0
+
+# MySQL 异步驱动（会话元数据 + 对话检查点持久化存储后端共用）
+aiomysql>=0.2.0,<1.0
+langgraph-checkpoint-mysql>=2.0.0,<4.0

@@ -84,6 +84,8 @@ async def lifespan(app: FastAPI):
     # 当 FastAPI 关闭时，会继续执行 yield 后面的代码
     yield
 
+    # 关闭 Agent，释放会话存储后端等资源（MySQL 连接池等）
+    await app.state.agent.close()
     logger.info("ZpAgent 服务正在关闭...")
     print("ZpAgent 服务已关闭")
 

@@ -65,6 +65,7 @@ import {
   chatStream,
   submitDecisions,
 } from './api/index.js'
+import { registerToolDisplayNames } from './utils/index.js'
 
 // ============================================
 // 响应式状态
@@ -205,6 +206,8 @@ async function loadTools() {
     try {
       const tools = await fetchTools()
       availableTools.value = tools
+      // 将后端返回的中文显示名称注册到全局响应式映射表
+      registerToolDisplayNames(tools)
       // 过滤掉不存在的工具名（后端工具变更后可能残留旧名称）
       const validNames = new Set(tools.map((t) => t.name))
       selectedTools.value = selectedTools.value.filter((n) => validNames.has(n))

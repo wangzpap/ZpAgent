@@ -69,6 +69,31 @@ class Settings(BaseSettings):
     HOST: str = Field(default="0.0.0.0", description="服务监听地址")
     PORT: int = Field(default=8000, gt=0, le=65535, description="服务端口")
 
+    # ---- 对话检查点存储后端配置（策略模式：memory / mysql） ----
+    # CHECKPOINT_BACKEND: 选择对话上下文（消息历史 + 图状态）的存储方式
+    #   - "memory": InMemorySaver（默认），开发调试用，重启丢失
+    #   - "mysql":  AIOMySQLSaver（MySQL），生产环境用，数据持久化
+    CHECKPOINT_BACKEND: str = Field(
+        default="memory",
+        description="检查点存储后端: 'memory'（内存）或 'mysql'（持久化）",
+    )
+    # 注意: MySQL 后端复用 MYSQL_HOST/MYSQL_PORT/MYSQL_USER/MYSQL_PASSWORD/MYSQL_DATABASE 配置
+
+    # ---- 会话存储后端配置（策略模式：memory / mysql） ----
+    # CONVERSATION_BACKEND: 选择会话元数据的存储方式
+    #   - "memory": 内存字典（默认），开发调试用，重启丢失
+    #   - "mysql":  MySQL 数据库，生产环境用，数据持久化
+    CONVERSATION_BACKEND: str = Field(
+        default="memory",
+        description="会话存储后端: 'memory'（内存）或 'mysql'（持久化）",
+    )
+    # MySQL 连接配置（CONVERSATION_BACKEND=mysql 或 CHECKPOINT_BACKEND=mysql 时共用）
+    MYSQL_HOST: str = Field(default="localhost", description="MySQL 服务器地址")
+    MYSQL_PORT: int = Field(default=3306, gt=0, le=65535, description="MySQL 端口")
+    MYSQL_USER: str = Field(default="root", description="MySQL 用户名")
+    MYSQL_PASSWORD: str = Field(default="", description="MySQL 密码")
+    MYSQL_DATABASE: str = Field(default="zpagent", description="MySQL 数据库名")
+
     # ---- 自定义校验器 ----
     # @field_validator("API_KEY") 表示这个函数专门校验 API_KEY 字段
     # @classmethod 是 Python 的类方法装饰器：

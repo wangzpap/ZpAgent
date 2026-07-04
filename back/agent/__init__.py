@@ -7,12 +7,13 @@ ReAct Agent 核心引擎（基于 LangGraph）
 架构概览：
   - agent/graph.py: 使用 create_agent 构建 LangGraph 状态图（含 HITL 中间件）
   - agent/__init__.py: 编排层，负责会话管理、流式事件适配、中断恢复
-  - conversation/: 会话元数据注册表（ConversationRegistry）
+  - conversation/: 会话元数据存储（策略模式，支持内存 / MySQL 后端）
+  - checkpoint/: 对话检查点存储（策略模式，支持内存 / MySQL 后端）
   - tools/: 工具注册表 + 内置工具（含审批策略配置）
 
 会话记忆机制（双层架构）：
-  - LangGraph checkpointer（InMemorySaver）：框架层自动管理对话状态
-  - ConversationRegistry：应用层管理会话元数据（标题、时间戳）
+  - CheckpointStore：框架层，LangGraph 自动管理对话状态（内存 / MySQL）
+  - ConversationStore：应用层，管理会话元数据（内存 / MySQL）
 
 人机交互（Human-in-the-Loop）：
   通过 HumanInTheLoopMiddleware 中间件实现按工具粒度的审批控制：
@@ -34,14 +35,14 @@ from langchain_core.messages import (
     SystemMessage,
     RemoveMessage,
 )
-from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.errors import GraphRecursionError
 from langgraph.types import Command
 
 from config import settings
 from tools.registry import ToolRegistry
 from tools.mcp_loader import load_mcp_tools
-from conversation import ConversationRegistry
+from conversation import ConversationStore, create_conversation_store
+from checkpoint import CheckpointStore, create_checkpoint_store
 from agent.graph import build_agent_graph, DEFAULT_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -53,8 +54,9 @@ class ReActAgent:
 
     核心组件：
       - tool_registry: 工具注册表（管理所有可用工具 + 审批策略）
-      - registry: 会话元数据注册表（标题、时间戳，供 UI 展示）
-      - checkpointer: InMemorySaver（LangGraph 框架层对话状态管理）
+      - registry: 会话存储（策略模式，支持内存 / MySQL 等后端）
+      - checkpoint_store: 检查点存储（策略模式，支持内存 / 文件等后端）
+      - checkpointer: LangGraph BaseCheckpointSaver（对话状态管理）
     """
 
     def __init__(self):
@@ -64,13 +66,27 @@ class ReActAgent:
         self.tool_registry = ToolRegistry()
         self.tool_registry.register_builtin_tools()
         logger.info("[Agent] 内置工具已注册")
-        self.registry = ConversationRegistry()
-        self.checkpointer = InMemorySaver()
-        logger.info("[Agent] InMemorySaver checkpointer 已创建（对话状态持久化）")
+        # 工厂方法：根据配置创建会话存储后端（内存 or MySQL）
+        self.registry: ConversationStore = create_conversation_store()
+        # 工厂方法：根据配置创建检查点存储后端（内存 or MySQL）
+        self.checkpoint_store: CheckpointStore = create_checkpoint_store()
+        # checkpointer 在 initialize() 中赋值（MySQL 后端需要先建立连接）
+        self.checkpointer = None
         logger.info("[Agent] 组件初始化完成")
 
     async def initialize(self) -> None:
-        """异步初始化：加载 MCP 工具"""
+        """异步初始化：初始化会话存储后端 + 检查点存储后端 + 加载 MCP 工具"""
+        # 初始化会话存储后端（MySQL 后端会在此创建连接池和建表；内存后端为空操作）
+        await self.registry.initialize()
+        logger.info("[Agent] 会话存储后端初始化完成")
+
+        # 初始化检查点存储后端（MySQL 后端会在此创建连接和建表；内存后端为空操作）
+        await self.checkpoint_store.initialize()
+        # initialize() 之后才能获取 checkpointer（MySQL 后端需要先建立连接）
+        self.checkpointer = self.checkpoint_store.get_checkpointer()
+        logger.info("[Agent] 检查点存储后端初始化完成 (类型: %s)",
+                     type(self.checkpointer).__name__)
+
         logger.info("[Agent] 开始加载 MCP 工具（路径: %s）...", settings.MCP_CONFIG_PATH)
         mcp_tools = await load_mcp_tools(settings.MCP_CONFIG_PATH)
         if mcp_tools:
@@ -769,6 +785,17 @@ class ReActAgent:
     # ============================================
     # 公共查询方法（供 API 路由层调用）
     # ============================================
+    async def close(self) -> None:
+        """
+        关闭 Agent，释放资源（会话存储连接池、检查点存储连接等）
+
+        在应用关闭时（lifespan 阶段）调用。
+        内存后端的 close() 为空操作，MySQL/文件后端会关闭连接。
+        """
+        await self.registry.close()
+        await self.checkpoint_store.close()
+        logger.info("[Agent] 存储后端已关闭")
+
     def get_tool_info_list(self) -> List[Dict[str, Any]]:
         """获取所有可用工具的前端展示信息"""
         return self.tool_registry.get_tool_info_list()
@@ -825,7 +852,17 @@ class ReActAgent:
         return result
 
     async def delete_conversation(self, conversation_id: str) -> bool:
-        """删除指定会话"""
+        """
+        删除指定会话（元数据 + 对话上下文一起删除）
+
+        同时清理两个存储后端：
+          1. conversation store: 删除会话元数据（标题、时间戳）
+          2. checkpoint store:   删除对话上下文（消息历史、图状态）
+        """
+        # 先删 checkpoint 数据（消息历史），确保即使后面元数据删除失败，
+        # 也不会留下孤立的对话上下文
+        await self.checkpointer.adelete_thread(conversation_id)
+        # 再删会话元数据
         return await self.registry.delete_conversation(conversation_id)
 
     async def clear_conversation(self, conversation_id: str) -> bool:

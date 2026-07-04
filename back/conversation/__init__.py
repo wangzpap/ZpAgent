@@ -1,191 +1,119 @@
 """
-会话注册表模块
+会话存储模块（策略模式）
 
-提供应用层的会话元数据管理（ConversationRegistry），
-与 LangGraph checkpointer（InMemorySaver）协同工作。
+提供应用层的会话元数据管理，支持多种存储后端。
+通过策略模式（Strategy Pattern）实现"一个接口、多个实现"，
+上层业务代码只依赖抽象基类 ConversationStore，不关心底层存储细节。
 
-双层架构：
+架构设计：
+  ┌─────────────────────────────────────┐
+  │   ConversationStore (抽象基类)        │  ← 策略接口
+  │   ├── create_conversation()          │
+  │   ├── get_conversations()            │
+  │   ├── get_conversation(id)           │
+  │   ├── delete_conversation(id)        │
+  │   ├── conversation_exists(id)        │
+  │   ├── update_title(id, title)        │
+  │   └── touch(id)                      │
+  └──────────┬──────────────┬───────────┘
+             │              │
+  ┌──────────▼──────┐  ┌───▼────────────────┐
+  │ InMemoryStore   │  │ MySQLStore         │   ← 具体策略
+  │ (开发/测试)      │  │ (生产/持久化)        │
+  └─────────────────┘  └────────────────────┘
+
+使用方式：
+    from conversation import create_conversation_store, ConversationStore
+
+    # 根据配置自动选择存储后端（工厂方法）
+    store: ConversationStore = create_conversation_store()
+    await store.initialize()
+
+    # 使用统一的接口操作会话
+    conv_id = await store.create_conversation()
+    conversations = await store.get_conversations()
+
+切换后端：
+    在 .env 文件中设置：
+      CONVERSATION_BACKEND=memory    # 内存（默认，开发用）
+      CONVERSATION_BACKEND=mysql     # MySQL（生产用，需配置连接信息）
+
+双层架构说明：
   - LangGraph checkpointer（InMemorySaver）: 框架层，自动管理对话状态和消息历史
-  - ConversationRegistry（本模块）: 应用层，管理会话元数据（标题、时间戳等）
+  - ConversationStore（本模块）: 应用层，管理会话元数据（标题、时间戳等）
 
-对话消息的存取完全由 LangGraph checkpointer 负责，
-本模块仅维护会话列表和标题等 UI 展示所需的元数据。
+  对话消息的存取完全由 LangGraph checkpointer 负责，
+  本模块仅维护会话列表和标题等 UI 展示所需的元数据。
 """
 
-# asyncio: Python 的异步 IO 库，提供 async/await 基础设施
-# 本模块用到的 asyncio.Lock: 异步互斥锁，防止并发修改共享数据
-import asyncio
-# uuid: Python 标准库，用于生成唯一标识符（如 "550e8400-e29b-41d4-a716-446655440000"）
-import uuid
-# datetime: Python 的日期时间库
-from datetime import datetime
-from typing import Dict, List, Any, Optional
+import logging
+
+# 导入抽象基类和所有具体实现
+from conversation.base import ConversationStore
+from conversation.memory_store import InMemoryConversationStore
+from conversation.mysql_store import MySQLConversationStore
+
+logger = logging.getLogger(__name__)
+
+# __all__: 定义 from conversation import * 时导出的符号列表
+# 这是 Python 模块的公共 API 声明，类似 Java 的 package-info 或 Go 的 export
+__all__ = [
+    "ConversationStore",           # 抽象基类（策略接口）
+    "InMemoryConversationStore",   # 内存实现（具体策略 A）
+    "MySQLConversationStore",      # MySQL 实现（具体策略 B）
+    "create_conversation_store",   # 工厂函数
+]
 
 
-class ConversationRegistry:
+def create_conversation_store() -> ConversationStore:
     """
-    会话注册表（应用层）
+    工厂函数：根据配置创建具体的会话存储实例
 
-    仅管理会话元数据（标题、时间戳），不存储消息。
-    消息历史由 LangGraph checkpointer 通过 thread_id 自动管理。
+    工厂模式（Factory Pattern）是什么？
+      - 一种创建型设计模式，将对象创建的逻辑封装在一个函数中
+      - 调用方不需要知道具体创建哪个类的实例，只需调用工厂函数
+      - 类似 Java 的 Factory Bean 或 Go 的 NewXxx() 构造函数
 
-    数据结构:
-        _conversations = {
-            "uuid-string": {
-                "id": str,           # 会话唯一标识
-                "title": str,        # 会话标题（用于 UI 列表展示）
-                "created_at": str,   # 创建时间（ISO 格式字符串）
-                "updated_at": str,   # 最后更新时间（ISO 格式字符串）
-            }
-        }
+    读取配置项 CONVERSATION_BACKEND 决定使用哪种后端：
+      - "memory"（默认）: 内存存储，开发调试用，重启丢失
+      - "mysql": MySQL 存储，生产环境用，数据持久化
 
-    线程安全：
-        使用 asyncio.Lock（异步互斥锁）保护 _conversations 字典，
-        防止多个请求同时修改导致数据不一致。
-        类似 Java 的 synchronized / ReentrantLock，但适配异步场景。
+    Returns:
+        ConversationStore 的具体实例
+
+    Raises:
+        ValueError: 配置了不支持的后端类型时抛出
+
+    使用示例：
+        store = create_conversation_store()
+        # 等价于：
+        #   if backend == "memory": store = InMemoryConversationStore()
+        #   elif backend == "mysql": store = MySQLConversationStore(...)
     """
+    # 延迟导入 settings，避免模块加载时的循环依赖
+    # 延迟导入（Lazy Import）：在函数内部 import，而非模块顶部
+    # 好处：避免循环 import、减少模块加载时间
+    from config import settings
 
-    def __init__(self):
-        """初始化空的会话字典和异步锁"""
-        # 类型注解 Dict[str, Dict[str, Any]] 表示：
-        #   外层 key 是会话 ID（str），value 是会话信息字典（Dict[str, Any]）
-        self._conversations: Dict[str, Dict[str, Any]] = {}
-        # asyncio.Lock: 异步互斥锁
-        # 用法：async with self._lock: 进入临界区，同一时刻只有一个协程能进入
-        # 为什么需要锁？asyncio 虽然是单线程的，但 await 会让出控制权，
-        # 两个协程可能在 await 之间交错执行，导致数据不一致
-        self._lock = asyncio.Lock()
+    backend = settings.CONVERSATION_BACKEND.lower()
+    logger.info("[ConversationStore] 创建存储后端: %s", backend)
 
-    async def create_conversation(self) -> str:
-        """
-        创建新会话，返回会话 ID
+    if backend == "memory":
+        return InMemoryConversationStore()
 
-        流程：
-          1. 生成 UUID 作为会话唯一标识
-          2. 获取当前时间作为创建/更新时间
-          3. 在锁保护下将新会话写入字典
+    elif backend == "mysql":
+        return MySQLConversationStore(
+            host=settings.MYSQL_HOST,
+            port=settings.MYSQL_PORT,
+            user=settings.MYSQL_USER,
+            password=settings.MYSQL_PASSWORD,
+            db=settings.MYSQL_DATABASE,
+        )
 
-        Returns:
-            新创建的会话 ID（UUID 格式字符串）
-        """
-        # uuid.uuid4() 生成随机 UUID，str() 转为字符串格式
-        conv_id = str(uuid.uuid4())
-        # datetime.now().isoformat() 获取当前时间并转为 ISO 格式字符串
-        # 例如: "2024-06-17T14:30:00.123456"
-        now = datetime.now().isoformat()
-        # async with: Python 的异步上下文管理器
-        # 作用：进入时获取锁，退出时自动释放锁（即使发生异常也会释放）
-        # 类似 Java 的 synchronized 块或 Go 的 sync.Mutex + defer
-        async with self._lock:
-            self._conversations[conv_id] = {
-                "id": conv_id,
-                "title": "新对话",
-                "created_at": now,
-                "updated_at": now,
-            }
-        return conv_id
-
-    async def get_conversations(self) -> List[Dict[str, Any]]:
-        """
-        获取所有会话概要列表（按更新时间倒序）
-
-        Returns:
-            会话字典列表，每项包含 id、title、created_at、updated_at
-            排序：updated_at 降序（最近更新的会话排在最前面）
-        """
-        async with self._lock:
-            # 列表推导式：Python 的简洁写法，等价于 for 循环 + append
-            # 这里只提取前端需要的字段，不暴露内部完整数据结构
-            result = [
-                {
-                    "id": c["id"],
-                    "title": c["title"],
-                    "created_at": c["created_at"],
-                    "updated_at": c["updated_at"],
-                }
-                for c in self._conversations.values()
-            ]
-        # sort(): 原地排序列表
-        # key=lambda x: x["updated_at"]: 按 updated_at 字段排序
-        # lambda: Python 的匿名函数（单行表达式函数），类似 Java 的 lambda 或 JS 的箭头函数
-        # reverse=True: 降序排列（最新的在前）
-        result.sort(key=lambda x: x["updated_at"], reverse=True)
-        return result
-
-    async def get_conversation(self, conversation_id: str) -> Optional[Dict[str, Any]]:
-        """
-        获取单个会话的元数据
-
-        Args:
-            conversation_id: 会话 ID
-
-        Returns:
-            会话信息字典的拷贝（防止外部修改内部数据）；不存在返回 None
-        """
-        async with self._lock:
-            conv = self._conversations.get(conversation_id)
-            if conv:
-                # dict(conv): 创建一份浅拷贝，防止外部代码意外修改内部数据
-                # 这是防御性编程的常见做法
-                return dict(conv)
-        return None
-
-    async def delete_conversation(self, conversation_id: str) -> bool:
-        """
-        删除指定会话
-
-        Args:
-            conversation_id: 要删除的会话 ID
-
-        Returns:
-            True 表示删除成功，False 表示会话不存在
-        """
-        async with self._lock:
-            if conversation_id in self._conversations:
-                # del: Python 的删除语句，从字典中移除指定 key
-                del self._conversations[conversation_id]
-                return True
-        return False
-
-    async def conversation_exists(self, conversation_id: str) -> bool:
-        """
-        检查会话是否存在
-
-        in 运算符: 检查 key 是否在字典中，类似 Java 的 HashMap.containsKey()
-
-        Args:
-            conversation_id: 要检查的会话 ID
-
-        Returns:
-            True 表示存在，False 表示不存在
-        """
-        async with self._lock:
-            return conversation_id in self._conversations
-
-    async def update_title(self, conversation_id: str, title: str) -> None:
-        """
-        更新会话标题
-
-        Args:
-            conversation_id: 会话 ID
-            title: 新的标题文本
-        """
-        async with self._lock:
-            if conversation_id in self._conversations:
-                self._conversations[conversation_id]["title"] = title
-
-    async def touch(self, conversation_id: str) -> None:
-        """
-        更新会话的 updated_at 时间戳为当前时间
-
-        用途：每次对话结束后调用，让该会话在列表中排到最前面。
-        类似 Linux 的 touch 命令更新文件修改时间。
-
-        Args:
-            conversation_id: 会话 ID
-        """
-        async with self._lock:
-            if conversation_id in self._conversations:
-                self._conversations[conversation_id]["updated_at"] = (
-                    datetime.now().isoformat()
-                )
+    else:
+        # 未知后端类型，抛出明确的错误信息帮助排查
+        raise ValueError(
+            f"不支持的会话存储后端: '{backend}'。"
+            f"可选值: 'memory'（内存）, 'mysql'（MySQL）。"
+            f"请在 .env 文件中设置 CONVERSATION_BACKEND=memory 或 CONVERSATION_BACKEND=mysql"
+        )

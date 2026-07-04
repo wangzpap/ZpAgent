@@ -44,6 +44,10 @@ class ToolRegistry:
         """初始化工具注册表"""
         self._tools: Dict[str, BaseTool] = {}
         self._builtin_names: set = set()
+        # ---- 工具中文显示名称 ----
+        # key=工具标识名, value=前端展示的中文名称
+        # 由 register_builtin_tools() 和 register_mcp_tools() 设置
+        self._display_names: Dict[str, str] = {}
         # ---- HITL 审批策略配置 ----
         # key=工具名称, value=审批策略，支持以下格式：
         #   False: 自动执行，无需人工干预（适合只读查询类工具）
@@ -73,15 +77,24 @@ class ToolRegistry:
         """
         批量注册所有内置工具
 
-        内置工具（get_location, get_datetime, get_weather）默认自动执行。
-        部分工具（get_datetime, get_weather）设为需要审批，用于演示 HITL 流程。
+        内置工具（get_datetime, base64_tool）默认自动执行。
+        get_datetime 设为需要审批，用于演示 HITL 流程。
         """
-        # 需要人工审批的内置工具（演示用：查询时间和查询天气需要审批确认）
-        require_approval_tools = {"get_datetime", "get_weather"}
+        # 需要人工审批的内置工具（演示用：查询时间需要审批确认）
+        require_approval_tools = {"get_datetime"}
+
+        # 内置工具的中文显示名称（前端展示用）
+        builtin_display_names = {
+            "get_datetime": "当前时间",
+            "base64_tool": "Base64编解码",
+        }
 
         for t in BUILTIN_TOOLS:
             self.register(t)
             self._builtin_names.add(t.name)
+            # 设置中文显示名称
+            if t.name in builtin_display_names:
+                self._display_names[t.name] = builtin_display_names[t.name]
             if t.name in require_approval_tools:
                 # True = 需要审批，支持全部决策类型（approve/edit/reject/respond）
                 self._approval_config[t.name] = True
@@ -133,8 +146,9 @@ class ToolRegistry:
         mcp_names = [name for name in self._tools if name not in self._builtin_names]
         for name in mcp_names:
             del self._tools[name]
-            # 同步清除审批配置
+            # 同步清除审批配置和显示名称
             self._approval_config.pop(name, None)
+            self._display_names.pop(name, None)
         return len(mcp_names)
 
     def get_interrupt_on_map(self, selected_tools: Optional[List[str]] = None) -> Dict[str, Any]:
@@ -225,8 +239,12 @@ class ToolRegistry:
             policy = self._approval_config.get(t.name, False)
             requires_approval = policy is not False
 
+            # 中文显示名称：优先使用注册时设置的名称，否则回退到工具标识名
+            display_name = self._display_names.get(t.name, t.name)
+
             result.append({
                 "name": t.name,
+                "display_name": display_name,
                 "description": t.description,
                 "parameters": schema,
                 "requires_approval": requires_approval,

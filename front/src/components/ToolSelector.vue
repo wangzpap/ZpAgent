@@ -82,7 +82,7 @@
               </svg>
             </div>
             <div class="tool-label">
-              <div class="tool-name">{{ toolDisplayName(tool.name) }}</div>
+              <div class="tool-name">{{ tool.display_name || tool.name }}</div>
               <div class="tool-desc">{{ shortDesc(tool.description) }}</div>
             </div>
           </div>
@@ -94,7 +94,6 @@
 
 <script setup>
 import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
-import { toolDisplayName } from '../utils/index.js'
 
 const props = defineProps({
   tools:    { type: Array, default: () => [] },  // 可用工具列表
