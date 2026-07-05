@@ -24,6 +24,7 @@
       @select="selectConversation"
       @new-chat="newChat"
       @delete="handleDeleteConversation"
+      @rename="handleRenameConversation"
     />
 
     <!-- 主区域：聊天视图（含消息列表 + 输入框 + 工具选择器） -->
@@ -62,6 +63,7 @@ import {
   reloadTools,
   deleteConversation,
   clearConversationMessages,
+  renameConversation,
   chatStream,
   submitDecisions,
 } from './api/index.js'
@@ -341,6 +343,16 @@ async function handleDeleteConversation(convId) {
     }
   } catch (e) {
     console.error('删除会话失败:', e)
+  }
+}
+
+/** 重命名指定会话并刷新列表 */
+async function handleRenameConversation(convId, newTitle) {
+  try {
+    await renameConversation(convId, newTitle)
+    await loadConversations()
+  } catch (e) {
+    console.error('重命名会话失败:', e)
   }
 }
 

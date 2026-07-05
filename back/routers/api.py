@@ -16,6 +16,7 @@ FastAPI 路由体系说明：
   GET  /api/messages/{conversation_id} — 获取会话消息历史
   GET  /api/conversations              — 获取所有会话列表
   GET  /api/conversations/{id}         — 获取会话详情
+  PATCH /api/conversations/{id}        — 重命名会话
   DELETE /api/conversations/{id}       — 删除会话
   DELETE /api/conversations/{id}/messages — 清空会话消息历史
   GET  /api/tools                      — 获取可用工具列表
@@ -34,7 +35,7 @@ from fastapi.responses import StreamingResponse, JSONResponse
 
 # ChatRequest: Pydantic 模型，FastAPI 会自动将 JSON 请求体解析为这个模型
 # 如果请求数据不符合模型定义（如缺少必填字段），FastAPI 自动返回 422 错误
-from models import ChatRequest, DecideRequest
+from models import ChatRequest, DecideRequest, RenameRequest
 
 logger = logging.getLogger(__name__)
 
@@ -256,6 +257,24 @@ async def clear_conversation_messages(conversation_id: str, req: Request):
     """
     agent = req.app.state.agent
     success = await agent.clear_conversation(conversation_id)
+    if not success:
+        return JSONResponse(
+            status_code=404,
+            content={"error": "会话不存在", "conversation_id": conversation_id},
+        )
+    return {"success": True}
+
+
+@router.patch("/conversations/{conversation_id}")
+async def rename_conversation(conversation_id: str, request: RenameRequest, req: Request):
+    """
+    重命名指定会话
+
+    仅更新会话标题，不影响对话上下文（消息历史）。
+    不存在时返回 HTTP 404 状态码。
+    """
+    agent = req.app.state.agent
+    success = await agent.rename_conversation(conversation_id, request.title)
     if not success:
         return JSONResponse(
             status_code=404,

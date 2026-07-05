@@ -47,6 +47,20 @@ export async function clearConversationMessages(conversationId) {
   return res.json()
 }
 
+/**
+ * 重命名指定会话
+ *
+ * PATCH /api/conversations/{id}，仅更新会话标题。
+ */
+export async function renameConversation(conversationId, title) {
+  const res = await fetch(`${BASE}/conversations/${conversationId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  })
+  return res.json()
+}
+
 /** 获取所有可用工具列表 */
 export async function fetchTools() {
   const res = await fetch(`${BASE}/tools`)

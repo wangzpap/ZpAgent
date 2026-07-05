@@ -262,27 +262,6 @@ html, body {
   line-height: 1.4;
 }
 
-.conv-item .delete-btn {
-  opacity: 0;
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 13px;
-  padding: 4px 8px;
-  border-radius: var(--radius-xxs);
-  transition: all var(--transition-fast);
-  font-family: var(--font-ui);
-  flex-shrink: 0;
-}
-
-.conv-item:hover .delete-btn { opacity: 0.6; }
-
-.conv-item .delete-btn:hover {
-  opacity: 1 !important;
-  color: var(--danger);
-  background: var(--danger-dim);
-}
 
 /* ============================================
    主区域

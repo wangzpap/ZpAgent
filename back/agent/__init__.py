@@ -872,6 +872,18 @@ class ReActAgent:
         await self.checkpointer.adelete_thread(conversation_id)
         return True
 
+    async def rename_conversation(self, conversation_id: str, title: str) -> bool:
+        """
+        重命名指定会话
+
+        仅更新会话元数据中的 title 字段，不影响对话上下文。
+        会话不存在时返回 False。
+        """
+        if not await self.registry.conversation_exists(conversation_id):
+            return False
+        await self.registry.update_title(conversation_id, title)
+        return True
+
     @staticmethod
     def _format_message(msg) -> Dict[str, Any]:
         """将 LangChain Message 对象格式化为前端展示用的字典"""
