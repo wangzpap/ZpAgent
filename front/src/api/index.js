@@ -5,10 +5,36 @@
  *   - 普通 REST 请求（会话列表、消息历史、删除会话、工具列表）
  *   - SSE 流式聊天请求（POST + text/event-stream）
  *
+ * 所有 REST 接口返回统一格式: { code, msg, data, extra }
+ *   - code === 0 表示成功，其他值表示失败
+ *   - data 承载主数据，extra 承载附加信息
+ *
  * 所有请求通过 Vite 代理 /api → http://localhost:8000/api 转发到后端。
  */
 
 const BASE = '/api'
+
+// ============================================
+// 统一请求封装
+// ============================================
+
+/**
+ * 统一 REST 请求函数
+ *
+ * 自动解包后端的 ApiResponse 格式：
+ *   - code === 0 → 返回完整的响应对象 { code, msg, data, extra }
+ *   - code !== 0 → 抛出 Error（message 为后端返回的 msg）
+ *
+ * 调用方通过 result.data 获取主数据，result.extra 获取附加信息。
+ */
+async function request(url, options) {
+  const res = await fetch(url, options)
+  const json = await res.json()
+  if (json.code !== 0) {
+    throw new Error(json.msg || '请求失败')
+  }
+  return json
+}
 
 // ============================================
 // 普通 REST 请求
@@ -16,22 +42,21 @@ const BASE = '/api'
 
 /** 获取所有会话列表（按更新时间倒序） */
 export async function fetchConversations() {
-  const res = await fetch(`${BASE}/conversations`)
-  return res.json()
+  const result = await request(`${BASE}/conversations`)
+  return result.data
 }
 
 /** 获取指定会话的消息历史 */
 export async function fetchHistory(conversationId) {
-  const res = await fetch(`${BASE}/messages/${conversationId}`)
-  return res.json()
+  const result = await request(`${BASE}/messages/${conversationId}`)
+  return result.data
 }
 
 /** 删除指定会话 */
 export async function deleteConversation(conversationId) {
-  const res = await fetch(`${BASE}/conversations/${conversationId}`, {
+  await request(`${BASE}/conversations/${conversationId}`, {
     method: 'DELETE',
   })
-  return res.json()
 }
 
 /**
@@ -41,10 +66,9 @@ export async function deleteConversation(conversationId) {
  * 会话条目保留在侧边栏列表中。
  */
 export async function clearConversationMessages(conversationId) {
-  const res = await fetch(`${BASE}/conversations/${conversationId}/messages`, {
+  await request(`${BASE}/conversations/${conversationId}/messages`, {
     method: 'DELETE',
   })
-  return res.json()
 }
 
 /**
@@ -53,18 +77,17 @@ export async function clearConversationMessages(conversationId) {
  * PATCH /api/conversations/{id}，仅更新会话标题。
  */
 export async function renameConversation(conversationId, title) {
-  const res = await fetch(`${BASE}/conversations/${conversationId}`, {
+  await request(`${BASE}/conversations/${conversationId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ title }),
   })
-  return res.json()
 }
 
 /** 获取所有可用工具列表 */
 export async function fetchTools() {
-  const res = await fetch(`${BASE}/tools`)
-  return res.json()
+  const result = await request(`${BASE}/tools`)
+  return result.data
 }
 
 /**
@@ -72,11 +95,11 @@ export async function fetchTools() {
  *
  * 通知后端重新读取 mcp_servers.json 配置文件，
  * 清除旧的 MCP 工具并重新加载，无需重启服务。
- * 返回 { success, cleared, loaded, total } 结果信息。
+ * 返回 { cleared, loaded, total } 附加信息。
  */
 export async function reloadTools() {
-  const res = await fetch(`${BASE}/tools/reload`, { method: 'POST' })
-  return res.json()
+  const result = await request(`${BASE}/tools/reload`, { method: 'POST' })
+  return result.extra
 }
 
 // ============================================

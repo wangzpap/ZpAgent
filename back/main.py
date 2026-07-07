@@ -20,13 +20,13 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-# CORSMiddleware 是 FastAPI 的跨域中间件
-# 中间件（Middleware）= 在请求到达路由处理函数之前/之后执行的代码
-# 类似 Java Servlet 的 Filter 或 Go 的 HTTP Middleware
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from agent import ReActAgent
 from config import settings
+from models.response import ApiResponse
 from routers.api import router
 
 logger = logging.getLogger(__name__)
@@ -120,15 +120,31 @@ app.add_middleware(
 app.include_router(router)
 
 
+# ---- 全局异常处理器 ----
+# 确保所有异常都返回统一的 ApiResponse 格式，前端永远不需要处理非标准 JSON
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    """Pydantic 参数校验失败（422）时返回统一格式"""
+    return JSONResponse(
+        status_code=200,
+        content=ApiResponse.fail(422, "参数校验失败", data=exc.errors()).to_dict(),
+    )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    """未捕获异常（500）时返回统一格式"""
+    logger.exception("未捕获异常: %s", exc)
+    return JSONResponse(
+        status_code=200,
+        content=ApiResponse.fail(500, "服务内部错误").to_dict(),
+    )
+
+
 @app.get("/api/health")
 async def health_check():
-    """
-    健康检查接口
-
-    @app.get 是 FastAPI 的路由装饰器，等价于 Spring 的 @GetMapping("/api/health")
-    async def 表示这是一个异步函数，FastAPI 会自动用异步方式调用它
-    """
-    return {"status": "ok", "service": "ZpAgent", "version": "1.0.0"}
+    """健康检查接口"""
+    return ApiResponse.ok({"status": "ok", "service": "ZpAgent", "version": "1.0.0"})
 
 
 # Python 的入口判断：仅当直接运行本文件时才执行（被 import 时不执行）

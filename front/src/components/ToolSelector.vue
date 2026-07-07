@@ -68,22 +68,24 @@
             暂无可用工具，请检查后端服务
           </div>
 
-          <!-- 工具列表（多选） -->
-          <div
-            v-for="tool in tools"
-            :key="tool.name"
-            class="tool-option"
-            :class="{ checked: selected.includes(tool.name) }"
-            @click="$emit('toggle', tool.name)"
-          >
-            <div class="checkbox">
-              <svg v-if="selected.includes(tool.name)" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="20 6 9 17 4 12"/>
-              </svg>
-            </div>
-            <div class="tool-label">
-              <div class="tool-name">{{ tool.display_name || tool.name }}</div>
-              <div class="tool-desc">{{ shortDesc(tool.description) }}</div>
+          <!-- 工具列表（多选，可滚动） -->
+          <div class="tool-list-scroll" :style="{ maxHeight: listMaxHeight + 'px' }">
+            <div
+              v-for="tool in tools"
+              :key="tool.name"
+              class="tool-option"
+              :class="{ checked: selected.includes(tool.name) }"
+              @click="$emit('toggle', tool.name)"
+            >
+              <div class="checkbox">
+                <svg v-if="selected.includes(tool.name)" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+              </div>
+              <div class="tool-label">
+                <div class="tool-name">{{ tool.display_name || tool.name }}</div>
+                <div class="tool-desc">{{ shortDesc(tool.description) }}</div>
+              </div>
             </div>
           </div>
         </div>
@@ -107,6 +109,7 @@ const isOpen = ref(false)
 const isReloading = ref(false)   // 刷新按钮的加载状态（控制旋转动画）
 const triggerRef = ref(null)
 const dropdownStyle = ref({})
+const listMaxHeight = ref(300)   // 工具列表最大高度（动态计算）
 
 // 是否全部选中
 const allSelected = computed(
@@ -122,15 +125,18 @@ async function toggleOpen() {
   }
 }
 
-/** 根据触发按钮位置计算下拉面板的固定坐标 */
+/** 根据触发按钮位置计算下拉面板的固定坐标和列表最大高度 */
 function calcPosition() {
   if (!triggerRef.value) return
   const rect = triggerRef.value.getBoundingClientRect()
+  const bottomOffset = window.innerHeight - rect.top + 8
   dropdownStyle.value = {
     position: 'fixed',
     left: `${rect.left}px`,
-    bottom: `${window.innerHeight - rect.top + 8}px`,
+    bottom: `${bottomOffset}px`,
   }
+  // 下拉面板从按钮上方展开，可用高度 = 视口高度 - 底部偏移 - 头部高度(~48px) - 安全边距(16px)
+  listMaxHeight.value = Math.max(120, window.innerHeight - bottomOffset - 48 - 16)
 }
 
 /** 窗口 resize 时重新计算位置 */
@@ -197,20 +203,6 @@ function shortDesc(desc) {
   transform: rotate(180deg);
 }
 
-.tool-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-}
-
-/* 头部操作区 */
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 /* 刷新按钮 */
 .refresh-btn {
   display: flex;
@@ -243,5 +235,207 @@ function shortDesc(desc) {
 @keyframes spin {
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
+}
+</style>
+
+<style>
+/* 工具选择器（下拉多选）
+   非 scoped — 下拉面板通过 Teleport 渲染到 body，scoped 样式无法穿透 */
+
+.tool-selector {
+  position: relative;
+}
+
+.tool-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 13px;
+  background: rgba(255,255,255,0.025);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  font-size: 12px;
+  font-family: var(--font-ui);
+  color: var(--text-secondary);
+  transition: all var(--transition-fast);
+  user-select: none;
+}
+
+.tool-trigger:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+  background: var(--accent-dim);
+}
+
+.tool-trigger.open {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  color: var(--text-primary);
+}
+
+.tool-trigger .count-badge {
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
+  color: var(--bg-base);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 0 7px;
+  border-radius: 9px;
+  min-width: 19px;
+  text-align: center;
+  line-height: 19px;
+  box-shadow: 0 1px 5px var(--accent-glow);
+}
+
+/* 点击外部关闭的遮罩 */
+.tool-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+}
+
+/* 下拉面板 */
+.tool-dropdown {
+  min-width: 320px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-float);
+  z-index: 200;
+  overflow: hidden;
+  animation: dropdown-in 0.25s var(--ease-out);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+@keyframes dropdown-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.tool-dropdown-header {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.tool-dropdown-header .toggle-all {
+  font-size: 11px;
+  color: var(--accent);
+  cursor: pointer;
+  background: none;
+  border: none;
+  font-family: var(--font-ui);
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: var(--radius-xxs);
+  transition: all var(--transition-fast);
+}
+
+.tool-dropdown-header .toggle-all:hover {
+  background: var(--accent-dim);
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 工具列表滚动区域 */
+.tool-list-scroll {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.tool-list-scroll::-webkit-scrollbar { width: 4px; }
+.tool-list-scroll::-webkit-scrollbar-track { background: transparent; }
+.tool-list-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.06);
+  border-radius: 4px;
+}
+.tool-list-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.18);
+}
+
+.tool-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 24px 18px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.tool-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 18px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  border-bottom: 1px solid var(--border);
+}
+
+.tool-option:last-child {
+  border-bottom: none;
+}
+
+.tool-option:hover {
+  background: var(--bg-hover);
+}
+
+.tool-option .checkbox {
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--border-light);
+  border-radius: var(--radius-xxs);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+  font-size: 10px;
+  color: transparent;
+}
+
+.tool-option.checked .checkbox {
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
+  border-color: var(--accent);
+  color: var(--bg-base);
+  box-shadow: 0 2px 8px var(--accent-glow);
+}
+
+.tool-option .tool-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.tool-option .tool-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.tool-option .tool-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

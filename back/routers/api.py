@@ -30,12 +30,10 @@ import logging
 # Request: FastAPI 的请求对象，可以访问 app.state 等上下文数据
 from fastapi import APIRouter, Request
 # StreamingResponse: 流式 HTTP 响应，服务器可以逐块推送数据（而非一次性返回）
-# JSONResponse: 普通 JSON 响应，用于返回错误信息
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse
 
-# ChatRequest: Pydantic 模型，FastAPI 会自动将 JSON 请求体解析为这个模型
-# 如果请求数据不符合模型定义（如缺少必填字段），FastAPI 自动返回 422 错误
 from models import ChatRequest, DecideRequest, RenameRequest
+from models.response import ApiResponse
 
 logger = logging.getLogger(__name__)
 
@@ -190,8 +188,8 @@ async def get_messages(conversation_id: str, req: Request):
     agent = req.app.state.agent
     history = await agent.get_history(conversation_id)
     if history is None:
-        return {"error": "会话不存在", "conversation_id": conversation_id}
-    return history
+        return ApiResponse.fail(404, "会话不存在")
+    return ApiResponse.ok(history)
 
 
 # ============================================
@@ -205,7 +203,7 @@ async def list_conversations(req: Request):
     前端会话列表页面调用此接口获取会话概要。
     """
     agent = req.app.state.agent
-    return await agent.get_conversations()
+    return ApiResponse.ok(await agent.get_conversations())
 
 
 @router.get("/conversations/{conversation_id}")
@@ -214,18 +212,13 @@ async def get_conversation(conversation_id: str, req: Request):
     获取指定会话的详细信息（包含完整消息历史）
 
     前端点击某个会话后调用此接口加载完整对话内容。
-    不存在时返回 HTTP 404 状态码。
+    不存在时返回 ApiResponse.fail(404, ...)。
     """
     agent = req.app.state.agent
     conversation = await agent.get_history(conversation_id)
     if conversation is None:
-        # JSONResponse: 手动构建 JSON 响应，可指定 HTTP 状态码
-        # 404 = Not Found，告诉前端"资源不存在"
-        return JSONResponse(
-            status_code=404,
-            content={"error": "会话不存在", "conversation_id": conversation_id},
-        )
-    return conversation
+        return ApiResponse.fail(404, "会话不存在")
+    return ApiResponse.ok(conversation)
 
 
 @router.delete("/conversations/{conversation_id}")
@@ -234,16 +227,13 @@ async def delete_conversation(conversation_id: str, req: Request):
     删除指定会话
 
     前端用户左滑/右键删除会话时调用。
-    不存在时返回 HTTP 404 状态码。
+    不存在时返回 ApiResponse.fail(404, ...)。
     """
     agent = req.app.state.agent
     success = await agent.delete_conversation(conversation_id)
     if not success:
-        return JSONResponse(
-            status_code=404,
-            content={"error": "会话不存在", "conversation_id": conversation_id},
-        )
-    return {"success": True}
+        return ApiResponse.fail(404, "会话不存在")
+    return ApiResponse.ok()
 
 
 @router.delete("/conversations/{conversation_id}/messages")
@@ -253,16 +243,13 @@ async def clear_conversation_messages(conversation_id: str, req: Request):
 
     删除 checkpointer 中该会话的所有对话上下文，使 LLM 丧失记忆。
     会话条目保留在侧边栏列表中，标题不变。
-    不存在时返回 HTTP 404 状态码。
+    不存在时返回 ApiResponse.fail(404, ...)。
     """
     agent = req.app.state.agent
     success = await agent.clear_conversation(conversation_id)
     if not success:
-        return JSONResponse(
-            status_code=404,
-            content={"error": "会话不存在", "conversation_id": conversation_id},
-        )
-    return {"success": True}
+        return ApiResponse.fail(404, "会话不存在")
+    return ApiResponse.ok()
 
 
 @router.patch("/conversations/{conversation_id}")
@@ -271,16 +258,13 @@ async def rename_conversation(conversation_id: str, request: RenameRequest, req:
     重命名指定会话
 
     仅更新会话标题，不影响对话上下文（消息历史）。
-    不存在时返回 HTTP 404 状态码。
+    不存在时返回 ApiResponse.fail(404, ...)。
     """
     agent = req.app.state.agent
     success = await agent.rename_conversation(conversation_id, request.title)
     if not success:
-        return JSONResponse(
-            status_code=404,
-            content={"error": "会话不存在", "conversation_id": conversation_id},
-        )
-    return {"success": True}
+        return ApiResponse.fail(404, "会话不存在")
+    return ApiResponse.ok()
 
 
 # ============================================
@@ -294,7 +278,7 @@ async def list_tools(req: Request):
     返回每个工具的名称、描述和参数 Schema，供前端工具选择面板使用。
     """
     agent = req.app.state.agent
-    return agent.get_tool_info_list()
+    return ApiResponse.ok(agent.get_tool_info_list())
 
 
 @router.post("/tools/reload")
@@ -311,19 +295,22 @@ async def reload_tools(req: Request):
       3. 新的工具列表立即生效
 
     Returns:
-        JSON 响应：
+        统一响应格式，统计数据放在 extra 字段：
         {
-            "success": true,
-            "cleared": 2,   // 被清除的旧 MCP 工具数量
-            "loaded": 3,    // 新加载的 MCP 工具数量
-            "total": 5      // 当前工具总数（内置 + MCP）
+            "code": 0,
+            "msg": "ok",
+            "data": null,
+            "extra": {
+                "cleared": 2,   // 被清除的旧 MCP 工具数量
+                "loaded": 3,    // 新加载的 MCP 工具数量
+                "total": 5      // 当前工具总数（内置 + MCP）
+            }
         }
     """
     agent = req.app.state.agent
     result = await agent.reload_mcp_tools()
-    return {
-        "success": True,
+    return ApiResponse.ok(extra={
         "cleared": result["cleared"],   # 被清除的旧 MCP 工具数量
         "loaded": result["loaded"],     # 新加载的 MCP 工具数量
         "total": result["total"],       # 当前工具总数（内置 + MCP）
-    }
+    })
