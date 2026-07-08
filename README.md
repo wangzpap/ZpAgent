@@ -21,6 +21,10 @@
 
 ![image-20260704113715397](README.assets/image-20260704113715397.png)
 
+- 工具详情展示
+
+![image-20260708172159089](README.assets/image-20260708172159089.png)
+
 - 支持Human-in-the-Loop人工介入
 
 ![image-20260704111700417](README.assets/image-20260704111700417.png)
