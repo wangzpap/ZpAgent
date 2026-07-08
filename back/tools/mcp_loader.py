@@ -23,14 +23,14 @@ import logging
 # pathlib: Python 现代路径操作库，比 os.path 更直观
 # Path(__file__).resolve().parent.parent 可以优雅地获取上上级目录
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 from langchain.tools import BaseTool
 
 logger = logging.getLogger(__name__)
 
 
-async def load_mcp_tools(config_path: str) -> List[BaseTool]:
+async def load_mcp_tools(config_path: str) -> List[Tuple[BaseTool, str]]:
     """
     从 MCP 配置文件加载所有 MCP 服务器提供的工具
 
@@ -44,7 +44,8 @@ async def load_mcp_tools(config_path: str) -> List[BaseTool]:
         config_path: mcp_servers.json 的路径（相对于 back/ 目录）
 
     Returns:
-        BaseTool 列表（可直接注册到 ToolRegistry），加载失败返回空列表
+        (BaseTool, server_name) 元组列表，server_name 标识工具来源的 MCP 服务器，
+        加载失败返回空列表
     """
     # 延迟导入（lazy import）：在函数内部才 import，而不是文件顶部
     # 好处：
@@ -100,7 +101,7 @@ async def load_mcp_tools(config_path: str) -> List[BaseTool]:
         return []
 
     # 逐个服务器加载工具（容错设计：单个失败不影响其他）
-    all_tools: List[BaseTool] = []
+    all_tools: List[Tuple[BaseTool, str]] = []
     for server_name, server_config in connections.items():
         # MultiServerMCPClient: langchain-mcp-adapters 提供的 MCP 客户端
         # 支持同时连接多个 MCP 服务器，这里每次只连一个（方便错误处理）
@@ -109,7 +110,8 @@ async def load_mcp_tools(config_path: str) -> List[BaseTool]:
             # get_tools(): 异步调用，连接 MCP 服务器并获取工具列表
             # 返回的每个工具都是 BaseTool 子类，可以直接被 LangGraph Agent 使用
             tools = await client.get_tools()
-            all_tools.extend(tools)  # extend: 将列表中的元素逐个添加到列表末尾
+            for t in tools:
+                all_tools.append((t, server_name))  # 保留工具与来源服务器的映射
             logger.info(
                 "MCP 服务器 '%s' 加载成功，获取 %d 个工具",
                 server_name, len(tools),

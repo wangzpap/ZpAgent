@@ -13,9 +13,10 @@
 """
 
 import logging
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 
 from langchain.tools import BaseTool
+from models.tool_info import ToolInfo
 from tools.builtin_tools import BUILTIN_TOOLS
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,10 @@ class ToolRegistry:
         #   - MCP 工具 → True（需审批，因为外部工具能力未知）
         #   - 未在配置中的工具 → 中间件视为自动通过
         self._approval_config: Dict[str, Any] = {}
+        # ---- MCP 工具来源映射 ----
+        # key=工具名称, value=MCP 服务器名称（server_name）
+        # 仅 MCP 工具有记录，内置工具不在此字典中
+        self._tool_server_map: Dict[str, str] = {}
 
     def register(self, tool: BaseTool) -> None:
         """
@@ -102,7 +107,7 @@ class ToolRegistry:
                 # False = 自动执行，无需人工干预
                 self._approval_config[t.name] = False
 
-    def register_mcp_tools(self, tools: List[BaseTool]) -> None:
+    def register_mcp_tools(self, tools: List[Tuple[BaseTool, str]]) -> None:
         """
         批量注册 MCP 工具（来自外部 MCP 服务器）
 
@@ -110,10 +115,11 @@ class ToolRegistry:
         可通过 set_approval() 方法覆盖特定工具的审批策略。
 
         Args:
-            tools: 从 MCP 服务器加载的 BaseTool 列表
+            tools: (BaseTool, server_name) 元组列表，server_name 标识工具来源的 MCP 服务器
         """
-        for t in tools:
+        for t, server_name in tools:
             self.register(t)
+            self._tool_server_map[t.name] = server_name
             # MCP 工具默认需要人工审批
             # True = HumanInTheLoopMiddleware 允许全部决策类型
             if t.name not in self._approval_config:
@@ -146,9 +152,10 @@ class ToolRegistry:
         mcp_names = [name for name in self._tools if name not in self._builtin_names]
         for name in mcp_names:
             del self._tools[name]
-            # 同步清除审批配置和显示名称
+            # 同步清除审批配置、显示名称和服务器来源映射
             self._approval_config.pop(name, None)
             self._display_names.pop(name, None)
+            self._tool_server_map.pop(name, None)
         return len(mcp_names)
 
     def get_interrupt_on_map(self, selected_tools: Optional[List[str]] = None) -> Dict[str, Any]:
@@ -210,15 +217,15 @@ class ToolRegistry:
         """获取所有已注册的工具"""
         return list(self._tools.values())
 
-    def get_tool_info_list(self) -> List[Dict[str, Any]]:
+    def get_tool_info_list(self) -> List[ToolInfo]:
         """
         获取所有工具的前端展示信息
 
-        将 BaseTool 对象转换为前端友好的字典格式，
-        包含工具名称、描述、参数 JSON Schema 和审批标记。
+        将 BaseTool 对象转换为 ToolInfo 模型实例，
+        包含工具名称、描述、参数 JSON Schema、审批标记、工具类型和来源服务器。
 
         Returns:
-            工具信息字典列表
+            ToolInfo 实例列表
         """
         result = []
         for t in self._tools.values():
@@ -242,11 +249,18 @@ class ToolRegistry:
             # 中文显示名称：优先使用注册时设置的名称，否则回退到工具标识名
             display_name = self._display_names.get(t.name, t.name)
 
-            result.append({
-                "name": t.name,
-                "display_name": display_name,
-                "description": t.description,
-                "parameters": schema,
-                "requires_approval": requires_approval,
-            })
+            # 工具类型和来源服务器：内置工具为 inner_tool / null，MCP 工具为 mcp / server_name
+            is_builtin = t.name in self._builtin_names
+            tool_type = "inner_tool" if is_builtin else "mcp"
+            server_name = None if is_builtin else self._tool_server_map.get(t.name)
+
+            result.append(ToolInfo(
+                name=t.name,
+                display_name=display_name,
+                description=t.description,
+                parameters=schema,
+                requires_approval=requires_approval,
+                tool_type=tool_type,
+                server_name=server_name,
+            ))
         return result

@@ -66,10 +66,10 @@ async def lifespan(app: FastAPI):
     # 注意：__init__() 不能是 async 的，所以需要单独定义 initialize() 方法
     await app.state.agent.initialize()
 
-    # get_tool_info_list() 返回所有工具的名称和描述信息
+    # get_tool_info_list() 返回所有工具的 ToolInfo 模型实例
     tools_info = app.state.agent.get_tool_info_list()
     # Python 列表推导式 + join：从工具信息列表中提取名称，用逗号拼接
-    tool_names = ", ".join(t["name"] for t in tools_info)
+    tool_names = ", ".join(t.name for t in tools_info)
 
     print("=" * 55)
     print("  ZpAgent 智能体服务已启动")

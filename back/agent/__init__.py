@@ -39,6 +39,7 @@ from langgraph.errors import GraphRecursionError
 from langgraph.types import Command
 
 from config import settings
+from models.tool_info import ToolInfo
 from tools.registry import ToolRegistry
 from tools.mcp_loader import load_mcp_tools
 from conversation import ConversationStore, create_conversation_store
@@ -91,8 +92,9 @@ class ReActAgent:
         mcp_tools = await load_mcp_tools(settings.MCP_CONFIG_PATH)
         if mcp_tools:
             self.tool_registry.register_mcp_tools(mcp_tools)
+            tool_names = [t.name for t, _ in mcp_tools]
             logger.info("[Agent] MCP 工具加载完成，共加载 %d 个工具: %s",
-                        len(mcp_tools), [t.name for t in mcp_tools])
+                        len(mcp_tools), tool_names)
         else:
             logger.info("[Agent] 未找到 MCP 工具（mcp_servers.json 为空或不存在）")
 
@@ -104,8 +106,9 @@ class ReActAgent:
         mcp_tools = await load_mcp_tools(settings.MCP_CONFIG_PATH)
         if mcp_tools:
             self.tool_registry.register_mcp_tools(mcp_tools)
+            tool_names = [t.name for t, _ in mcp_tools]
             logger.info("[MCP] 已加载 %d 个新的 MCP 工具: %s",
-                        len(mcp_tools), [t.name for t in mcp_tools])
+                        len(mcp_tools), tool_names)
         else:
             logger.info("[MCP] 未找到新的 MCP 工具")
         total = len(self.tool_registry.get_all_tools())
@@ -796,7 +799,7 @@ class ReActAgent:
         await self.checkpoint_store.close()
         logger.info("[Agent] 存储后端已关闭")
 
-    def get_tool_info_list(self) -> List[Dict[str, Any]]:
+    def get_tool_info_list(self) -> List[ToolInfo]:
         """获取所有可用工具的前端展示信息"""
         return self.tool_registry.get_tool_info_list()
 

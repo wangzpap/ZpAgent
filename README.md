@@ -56,7 +56,9 @@ ZpAgent-Python/
 │   │   ├── memory_store.py          # InMemory 实现
 │   │   └── mysql_store.py           # MySQL 实现
 │   ├── models/
-│   │   └── __init__.py              # Pydantic 数据模型
+│   │   ├── __init__.py              # Pydantic 数据模型（请求/响应/会话）
+│   │   ├── tool_info.py            # 工具信息模型（前端工具选择面板）
+│   │   └── response.py             # 统一 API 响应格式（ApiResponse）
 │   ├── routers/
 │   │   └── api.py                   # 统一 API 路由（聊天 + HITL + 会话 + 工具）
 │   └── requirements.txt             # Python 依赖
@@ -314,11 +316,12 @@ npm run dev
 
 ## 内置工具
 
-| 工具标识 | 功能说明 |
-|----------|----------|
-| `get_datetime` | 查询当前日期、时间、星期 |
+| 工具标识 | 功能说明 | 是否需要审批 |
+|----------|----------|--------------|
+| `get_datetime` | 查询当前日期、时间、星期 | 是（演示用） |
+| `base64_tool` | Base64 编码/解码，支持 encode 和 decode 两种操作 | 否 |
 
-可通过 `back/mcp_servers.json` 配置加载额外的 MCP 外部工具。
+可通过 `back/mcp_servers.json` 配置加载额外的 MCP 外部工具，MCP 工具默认需要人工审批。
 
 ## 扩展指南
 
@@ -352,6 +355,12 @@ def my_new_tool(param: str) -> str:
 
 ## API 接口一览
 
+所有 JSON 接口（SSE 流式除外）统一使用 `ApiResponse` 格式返回：
+
+```json
+{"code": 0, "msg": "ok", "data": {...}, "extra": null}
+```
+
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | `POST` | `/api/chat` | 聊天（SSE 流式输出） |
@@ -359,11 +368,11 @@ def my_new_tool(param: str) -> str:
 | `GET` | `/api/messages/{id}` | 获取会话消息历史 |
 | `GET` | `/api/conversations` | 获取所有会话列表 |
 | `GET` | `/api/conversations/{id}` | 获取会话详情 |
+| `PATCH` | `/api/conversations/{id}` | 重命名会话 |
 | `DELETE` | `/api/conversations/{id}` | 删除会话 |
 | `DELETE` | `/api/conversations/{id}/messages` | 清空会话消息 |
-| `GET` | `/api/tools` | 获取可用工具列表 |
-| `POST` | `/api/tools/reload` | 重新加载工具（含 MCP） |
-| `GET` | `/api/health` | 健康检查 |
+| `GET` | `/api/tools` | 获取可用工具列表（含 tool_type、server_name） |
+| `POST` | `/api/tools/reload` | 热重载 MCP 工具 |
 
 ## 协议
 

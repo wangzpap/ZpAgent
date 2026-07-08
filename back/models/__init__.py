@@ -116,20 +116,7 @@ class ConversationDetail(BaseModel):
     updated_at: str
 
 
-class ToolInfo(BaseModel):
-    """
-    工具信息（返回给前端展示）
-
-    前端用此模型在工具选择面板中展示可用工具列表。
-    """
-    name: str = Field(..., description="工具标识名（唯一标识，用于 selected_tools 匹配）")
-    description: str = Field(..., description="工具功能描述（展示给用户看）")
-    # parameters 是工具的参数 JSON Schema
-    # 例如: {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]}
-    # 前端可以根据 Schema 动态生成参数输入表单
-    parameters: Optional[Dict[str, Any]] = Field(
-        default=None, description="工具参数的 JSON Schema"
-    )
+from models.tool_info import ToolInfo  # noqa: F401  # 重新导出，保持向后兼容
 
 
 class Decision(BaseModel):
