@@ -69,12 +69,14 @@ async def load_mcp_tools(config_path: str) -> List[Tuple[BaseTool, str]]:
     try:
         with open(full_path, "r", encoding="utf-8") as f:
             # json.load(): 从文件对象中读取并解析 JSON
-            # raw_config 的格式如：
+            # 配置文件格式（mcpServers 下放置所有服务器配置）：
             # {
-            #     "server_name": {"transport": "stdio", "command": "python", "args": ["server.py"]},
-            #     "another_server": {"transport": "sse", "url": "http://..."}
+            #     "mcpServers": {
+            #         "server_name": {"transport": "stdio", "command": "npx", "args": [...]},
+            #         "another_server": {"transport": "sse", "url": "http://..."}
+            #     }
             # }
-            raw_config: Dict[str, Any] = json.load(f)
+            raw_data: Dict[str, Any] = json.load(f)
     except (json.JSONDecodeError, IOError) as e:
         # json.JSONDecodeError: JSON 格式错误（如缺少逗号、引号不匹配）
         # IOError: 文件读取错误（如权限不足、文件损坏）
@@ -82,8 +84,10 @@ async def load_mcp_tools(config_path: str) -> List[Tuple[BaseTool, str]]:
         logger.error("读取 MCP 配置文件失败: %s", e)
         return []
 
-    if not raw_config:
-        logger.info("MCP 配置文件为空，跳过加载")
+    # 从 mcpServers 键提取服务器配置
+    raw_config = raw_data.get("mcpServers")
+    if not raw_config or not isinstance(raw_config, dict):
+        logger.info("MCP 配置文件中未找到有效的 mcpServers 配置，跳过加载")
         return []
 
     # 校验并过滤配置：只保留格式正确的服务器配置
