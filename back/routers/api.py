@@ -2,25 +2,25 @@
 API 路由（统一入口）
 
 合并聊天（SSE 流式输出）、消息历史查询、会话管理和工具列表的所有接口。
-所有路由统一使用 /api 前缀。
+所有路由统一使用 /api 前缀，仅使用 GET 和 POST 请求方法。
 
 FastAPI 路由体系说明：
   - APIRouter: 路由组，可以把相关的接口归到一起（类似 Java 的 Controller）
-  - @router.post/get/delete: 路由装饰器，自动将函数注册为 API 端点
+  - @router.post/get: 路由装饰器，自动将函数注册为 API 端点
   - Request 参数: FastAPI 自动注入的请求对象，包含 app.state 等上下文
   - StreamingResponse: 流式响应，逐块推送数据给客户端（SSE 需要）
 
 接口列表：
-  POST /api/chat                      — 聊天（SSE 流式输出）
-  POST /api/chat/decide               — 提交审批决策并继续执行（SSE 流式输出）
-  GET  /api/messages/{conversation_id} — 获取会话消息历史
-  GET  /api/conversations              — 获取所有会话列表
-  GET  /api/conversations/{id}         — 获取会话详情
-  PATCH /api/conversations/{id}        — 重命名会话
-  DELETE /api/conversations/{id}       — 删除会话
-  DELETE /api/conversations/{id}/messages — 清空会话消息历史
-  GET  /api/tools                      — 获取可用工具列表
-  POST /api/tools/reload               — 热重载 MCP 工具
+  POST /api/chat                                — 聊天（SSE 流式输出）
+  POST /api/chat/decide                         — 提交审批决策并继续执行（SSE 流式输出）
+  GET  /api/messages/{conversation_id}          — 获取会话消息历史
+  GET  /api/conversations                       — 获取所有会话列表
+  GET  /api/conversations/{id}                  — 获取会话详情
+  POST /api/conversations/{id}/rename           — 重命名会话
+  POST /api/conversations/{id}/delete           — 删除会话
+  POST /api/conversations/{id}/messages/clear   — 清空会话消息历史
+  GET  /api/tools                               — 获取可用工具列表
+  POST /api/tools/reload                        — 热重载 MCP 工具
 """
 
 import json
@@ -32,8 +32,8 @@ from fastapi import APIRouter, Request
 # StreamingResponse: 流式 HTTP 响应，服务器可以逐块推送数据（而非一次性返回）
 from fastapi.responses import StreamingResponse
 
-from models import ChatRequest, DecideRequest, RenameRequest
-from models.response import ApiResponse
+from entity import ChatRequest, DecideRequest, RenameRequest
+from entity.common.api_response import ApiResponse
 
 logger = logging.getLogger(__name__)
 
@@ -221,7 +221,7 @@ async def get_conversation(conversation_id: str, req: Request):
     return ApiResponse.ok(conversation)
 
 
-@router.delete("/conversations/{conversation_id}")
+@router.post("/conversations/{conversation_id}/delete")
 async def delete_conversation(conversation_id: str, req: Request):
     """
     删除指定会话
@@ -236,7 +236,7 @@ async def delete_conversation(conversation_id: str, req: Request):
     return ApiResponse.ok()
 
 
-@router.delete("/conversations/{conversation_id}/messages")
+@router.post("/conversations/{conversation_id}/messages/clear")
 async def clear_conversation_messages(conversation_id: str, req: Request):
     """
     清空指定会话的消息历史（保留会话本身）
@@ -252,7 +252,7 @@ async def clear_conversation_messages(conversation_id: str, req: Request):
     return ApiResponse.ok()
 
 
-@router.patch("/conversations/{conversation_id}")
+@router.post("/conversations/{conversation_id}/rename")
 async def rename_conversation(conversation_id: str, request: RenameRequest, req: Request):
     """
     重命名指定会话

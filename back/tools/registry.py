@@ -16,7 +16,7 @@ import logging
 from typing import Dict, List, Optional, Any, Tuple
 
 from langchain.tools import BaseTool
-from models.tool_info import ToolInfo
+from entity.tool.tool_info import ToolInfo
 from tools.builtin_tools import BUILTIN_TOOLS
 
 logger = logging.getLogger(__name__)

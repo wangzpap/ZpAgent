@@ -26,7 +26,7 @@ from fastapi.responses import JSONResponse
 
 from agent import ReActAgent
 from config import settings
-from models.response import ApiResponse
+from entity.common.api_response import ApiResponse
 from routers.api import router
 
 logger = logging.getLogger(__name__)

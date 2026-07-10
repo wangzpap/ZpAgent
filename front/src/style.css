@@ -594,9 +594,9 @@ html, body {
   cursor: pointer;
   font-size: 11px;
   font-family: var(--font-ui);
-  color: var(--text-muted);
+  color: var(--text-secondary);
   transition: all var(--transition-fast);
-  opacity: 0.7;
+  opacity: 0.85;
 }
 
 .clear-btn:hover {

@@ -54,8 +54,8 @@ export async function fetchHistory(conversationId) {
 
 /** 删除指定会话 */
 export async function deleteConversation(conversationId) {
-  await request(`${BASE}/conversations/${conversationId}`, {
-    method: 'DELETE',
+  await request(`${BASE}/conversations/${conversationId}/delete`, {
+    method: 'POST',
   })
 }
 
@@ -66,19 +66,19 @@ export async function deleteConversation(conversationId) {
  * 会话条目保留在侧边栏列表中。
  */
 export async function clearConversationMessages(conversationId) {
-  await request(`${BASE}/conversations/${conversationId}/messages`, {
-    method: 'DELETE',
+  await request(`${BASE}/conversations/${conversationId}/messages/clear`, {
+    method: 'POST',
   })
 }
 
 /**
  * 重命名指定会话
  *
- * PATCH /api/conversations/{id}，仅更新会话标题。
+ * POST /api/conversations/{id}/rename，仅更新会话标题。
  */
 export async function renameConversation(conversationId, title) {
-  await request(`${BASE}/conversations/${conversationId}`, {
-    method: 'PATCH',
+  await request(`${BASE}/conversations/${conversationId}/rename`, {
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ title }),
   })

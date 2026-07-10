@@ -59,10 +59,12 @@ ZpAgent-Python/
 │   │   ├── base.py                  # 抽象基类
 │   │   ├── memory_store.py          # InMemory 实现
 │   │   └── mysql_store.py           # MySQL 实现
-│   ├── models/
-│   │   ├── __init__.py              # Pydantic 数据模型（请求/响应/会话）
-│   │   ├── tool_info.py            # 工具信息模型（前端工具选择面板）
-│   │   └── response.py             # 统一 API 响应格式（ApiResponse）
+│   ├── entity/
+│   │   ├── __init__.py              # Pydantic 数据模型（统一导出）
+│   │   ├── chat/                    # 聊天相关（Message、ChatRequest、Decision、DecideRequest）
+│   │   ├── conversation/            # 会话管理（ConversationInfo、ConversationDetail、RenameRequest）
+│   │   ├── tool/                    # 工具相关（ToolInfo）
+│   │   └── common/                  # 公共模型（ApiResponse）
 │   ├── routers/
 │   │   └── api.py                   # 统一 API 路由（聊天 + HITL + 会话 + 工具）
 │   └── requirements.txt             # Python 依赖
@@ -359,7 +361,7 @@ def my_new_tool(param: str) -> str:
 
 ## API 接口一览
 
-所有 JSON 接口（SSE 流式除外）统一使用 `ApiResponse` 格式返回：
+所有路由仅使用 GET 和 POST 请求方法。JSON 接口（SSE 流式除外）统一使用 `ApiResponse` 格式返回：
 
 ```json
 {"code": 0, "msg": "ok", "data": {...}, "extra": null}
@@ -372,9 +374,9 @@ def my_new_tool(param: str) -> str:
 | `GET` | `/api/messages/{id}` | 获取会话消息历史 |
 | `GET` | `/api/conversations` | 获取所有会话列表 |
 | `GET` | `/api/conversations/{id}` | 获取会话详情 |
-| `PATCH` | `/api/conversations/{id}` | 重命名会话 |
-| `DELETE` | `/api/conversations/{id}` | 删除会话 |
-| `DELETE` | `/api/conversations/{id}/messages` | 清空会话消息 |
+| `POST` | `/api/conversations/{id}/rename` | 重命名会话 |
+| `POST` | `/api/conversations/{id}/delete` | 删除会话 |
+| `POST` | `/api/conversations/{id}/messages/clear` | 清空会话消息 |
 | `GET` | `/api/tools` | 获取可用工具列表（含 tool_type、server_name） |
 | `POST` | `/api/tools/reload` | 热重载 MCP 工具 |
 

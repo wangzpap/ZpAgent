@@ -39,7 +39,7 @@ from langgraph.errors import GraphRecursionError
 from langgraph.types import Command
 
 from config import settings
-from models.tool_info import ToolInfo
+from entity.tool.tool_info import ToolInfo
 from tools.registry import ToolRegistry
 from tools.mcp_loader import load_mcp_tools
 from conversation import ConversationStore, create_conversation_store
