@@ -118,3 +118,41 @@ class Settings(BaseSettings):
 # Python 模块级别的变量只会在首次 import 时执行一次（天然单例）
 # 其他文件通过 from config import settings 即可获取同一个实例
 settings = Settings()
+
+
+def reload_settings() -> None:
+    """
+    热重载配置：重新从 .env 文件读取配置，原地更新 settings 单例的属性
+
+    为什么需要这个函数？
+      Settings() 只在模块首次 import 时执行一次，之后 settings 对象持有的值
+      就是那一刻从 .env 读到的快照。运行时通过 API 修改 .env 后，内存中的
+      settings 并不知道文件已变化。
+
+    为什么不直接 settings = Settings() 重新赋值？
+      其他模块通过 from config import settings 拿到的是 **当时的引用副本**。
+      如果这里创建新实例并赋值给 settings，其他模块持有的旧引用不会自动更新。
+
+    解决方案：原地更新属性
+      构造一个新的 Settings() 实例读取最新 .env，然后把它的属性字典
+      覆盖写入现有 settings 实例的 __dict__。这样所有持有 settings 引用的
+      模块（包括 create_llm() 中的 settings.BASE_URL 等）自动看到新值。
+
+    调用时机：
+      ConfigService.save_llm_config() 写入 .env 后立即调用此函数，
+      使下一次 build_agent_graph() → create_llm() 读到最新配置。
+    """
+    global settings
+    # 从 .env 文件重新构造一个全新的 Settings 实例
+    new_settings = Settings()
+    # 将新实例的所有字段值原地写入现有单例的 __dict__
+    # 效果：settings.BASE_URL、settings.API_KEY 等属性立即变为新值
+    # 而其他模块通过 from config import settings 拿到的引用不受影响（仍然是同一个对象）
+    settings.__dict__.update(new_settings.__dict__)
+    logger.info("[Config] settings 已热重载（BASE_URL=%s, MODEL_NAME=%s）",
+                settings.BASE_URL, settings.MODEL_NAME)
+
+
+# 仅在 reload_settings() 中使用，避免循环 import
+import logging
+logger = logging.getLogger(__name__)

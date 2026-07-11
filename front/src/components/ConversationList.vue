@@ -99,9 +99,16 @@
       </div>
     </div>
 
-    <!-- 底部信息 -->
+    <!-- 底部信息 + 设置按钮 -->
     <div class="sidebar-footer">
-      <span>ZpAgent v1.0</span>
+      <span class="version-text">ZpAgent</span>
+      <button class="settings-btn" @click="showSettings = true" title="系统设置">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </button>
     </div>
 
     <!-- 删除确认弹窗 -->
@@ -115,12 +122,19 @@
       @confirm="confirmDelete"
       @cancel="cancelDelete"
     />
+
+    <!-- 系统设置弹窗 -->
+    <SettingsDialog
+      :visible="showSettings"
+      @close="showSettings = false"
+    />
   </aside>
 </template>
 
 <script setup>
 import { ref, computed, reactive, nextTick } from 'vue'
 import ConfirmDialog from './ConfirmDialog.vue'
+import SettingsDialog from './SettingsDialog.vue'
 
 const props = defineProps({
   conversations: { type: Array, default: () => [] },
@@ -128,6 +142,9 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['select', 'new-chat', 'delete', 'rename'])
+
+// ---- 设置弹窗状态 ----
+const showSettings = ref(false)
 
 // ---- 删除确认弹窗状态 ----
 const showDeleteConfirm = ref(false)
@@ -349,8 +366,42 @@ function handleDelete(convId) {
   border-top: 1px solid var(--border);
   font-size: 11px;
   color: var(--text-muted);
-  opacity: 0.45;
+  opacity: 0.9;
   letter-spacing: 0.3px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: opacity var(--transition-fast);
+}
+
+.sidebar-footer:hover {
+  opacity: 1;
+}
+
+.version-text {
+  font-size: 11px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.settings-btn {
+  background: var(--accent-dim);
+  border: 1px solid var(--border-accent);
+  color: var(--accent);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: var(--radius-xxs);
+  transition: all var(--transition-fast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 1;
+}
+
+.settings-btn:hover {
+  background: var(--accent);
+  color: var(--bg-base);
+  box-shadow: 0 2px 8px var(--accent-glow);
 }
 </style>
 

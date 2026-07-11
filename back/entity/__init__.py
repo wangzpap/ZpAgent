@@ -27,6 +27,7 @@ from entity.tool.tool_info import ToolInfo
 
 # ---- 公共 ----
 from entity.common.api_response import ApiResponse
+from entity.common.llm_config import LlmConfigRequest, LlmConfigResponse
 
 __all__ = [
     # chat
@@ -42,4 +43,6 @@ __all__ = [
     "ToolInfo",
     # common
     "ApiResponse",
+    "LlmConfigRequest",
+    "LlmConfigResponse",
 ]

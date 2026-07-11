@@ -10,6 +10,7 @@
 - **Human-in-the-Loop**：敏感工具需用户审批后执行，支持批准/编辑/拒绝/自行回复
 - **多轮会话记忆**：双层存储架构（元数据 + 对话状态），支持 InMemory / MySQL 后端切换
 - **MCP 工具扩展**：通过 `mcp_servers.json` 配置加载外部 MCP 工具服务
+- **页面配置大模型**：前端设置面板直接修改 API 地址、密钥和模型名称，保存后热重载立即生效，无需重启服务
 
 ## 界面预览
 
@@ -28,6 +29,10 @@
 - 支持Human-in-the-Loop人工介入
 
 ![image-20260704111700417](README.assets/image-20260704111700417.png)
+
+页面支持模型配置
+
+![image-20260711131759354](README.assets/image-20260711131759354.png)
 
 ## 项目架构
 
@@ -64,9 +69,12 @@ ZpAgent-Python/
 │   │   ├── chat/                    # 聊天相关（Message、ChatRequest、Decision、DecideRequest）
 │   │   ├── conversation/            # 会话管理（ConversationInfo、ConversationDetail、RenameRequest）
 │   │   ├── tool/                    # 工具相关（ToolInfo）
-│   │   └── common/                  # 公共模型（ApiResponse）
+│   │   └── common/                  # 公共模型（ApiResponse、LlmConfigRequest、LlmConfigResponse）
+│   ├── services/
+│   │   ├── __init__.py              # 服务层导出
+│   │   └── config_service.py        # 配置服务（.env 读写 + 热重载）
 │   ├── routers/
-│   │   └── api.py                   # 统一 API 路由（聊天 + HITL + 会话 + 工具）
+│   │   └── api.py                   # 统一 API 路由（聊天 + HITL + 会话 + 工具 + 配置管理）
 │   └── requirements.txt             # Python 依赖
 │
 └── front/                           # 前端（Vue 3 + Vite）
@@ -85,9 +93,11 @@ ZpAgent-Python/
         │   └── index.js             # 工具函数 + 工具中文名映射
         └── components/
             ├── ChatMessage.vue      # 消息组件（含 ReAct 思考过程）
-            ├── ConversationList.vue # 侧边栏会话列表
+            ├── ConversationList.vue # 侧边栏会话列表（含设置入口）
             ├── ToolSelector.vue     # 工具多选栏
-            └── ApprovalPanel.vue    # HITL 工具审批面板
+            ├── ApprovalPanel.vue    # HITL 工具审批面板
+            ├── SettingsDialog.vue   # 系统设置弹窗（大模型配置）
+            └── ConfirmDialog.vue    # 通用确认弹窗
 ```
 
 ## 技术栈
@@ -240,14 +250,17 @@ npm run dev
 ## 使用说明
 
 1. 浏览器打开 **http://localhost:5173**
-2. 在底部输入框输入消息，按 Enter 发送
-3. 通过工具栏选择需要启用的工具（默认 3 个内置工具）
-4. 观察 Agent 的 ReAct 推理过程（工具调用 → 观察结果 → 最终回答）
-5. 当 Agent 调用需要审批的工具时，审批面板会弹出，你可以选择批准/编辑/拒绝/自行回复
+2. 点击左下角齿轮图标打开设置面板，配置 API 地址、密钥和模型名称（也可通过 `.env` 文件配置）
+3. 在底部输入框输入消息，按 Enter 发送
+4. 通过工具栏选择需要启用的工具
+5. 观察 Agent 的 ReAct 推理过程（工具调用 → 观察结果 → 最终回答）
+6. 当 Agent 调用需要审批的工具时，审批面板会弹出，你可以选择批准/编辑/拒绝/自行回复
 
 ## 环境变量说明
 
 在 `back/.env` 中配置：
+
+> **提示**：`API_KEY`、`BASE_URL`、`MODEL_NAME` 三项也可通过前端左下角设置面板修改，保存后热重载立即生效，无需重启服务。
 
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
@@ -379,6 +392,8 @@ def my_new_tool(param: str) -> str:
 | `POST` | `/api/conversations/{id}/messages/clear` | 清空会话消息 |
 | `GET` | `/api/tools` | 获取可用工具列表（含 tool_type、server_name） |
 | `POST` | `/api/tools/reload` | 热重载 MCP 工具 |
+| `GET` | `/api/config/llm` | 获取当前 LLM 配置（密钥脱敏） |
+| `POST` | `/api/config/llm` | 保存 LLM 配置到 .env（热重载立即生效） |
 
 ## 协议
 

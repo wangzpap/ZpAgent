@@ -103,6 +103,39 @@ export async function reloadTools() {
 }
 
 // ============================================
+// 配置管理（LLM 大模型配置）
+// ============================================
+
+/**
+ * 获取当前 LLM 配置
+ *
+ * GET /api/config/llm，返回脱敏后的 API 密钥和当前配置。
+ * 用于打开设置弹窗时填充表单。
+ */
+export async function fetchLlmConfig() {
+  const result = await request(`${BASE}/config/llm`)
+  return result.data
+}
+
+/**
+ * 保存 LLM 配置到 .env 文件
+ *
+ * POST /api/config/llm，将新的 API 地址、密钥、模型名称写入 .env。
+ * api_key 为空字符串时后端不覆盖现有密钥。
+ * 注意：修改后需重启后端服务才能生效。
+ *
+ * @param {Object} config - { base_url, api_key, model_name }
+ */
+export async function saveLlmConfig(config) {
+  const result = await request(`${BASE}/config/llm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  })
+  return result.msg
+}
+
+// ============================================
 // SSE 流式聊天请求
 // ============================================
 

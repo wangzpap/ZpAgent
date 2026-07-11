@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_SYSTEM_PROMPT = "你是一个智能助手。"
 
-
+# build_agent_graph() 是在每次 run() 和 resume() 请求时重新调用的（不是启动时一次性创建）
 def build_agent_graph(
     tools: Optional[Sequence[BaseTool]] = None,
     system_prompt: str = DEFAULT_SYSTEM_PROMPT,

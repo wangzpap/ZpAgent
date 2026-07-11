@@ -21,6 +21,8 @@ FastAPI 路由体系说明：
   POST /api/conversations/{id}/messages/clear   — 清空会话消息历史
   GET  /api/tools                               — 获取可用工具列表
   POST /api/tools/reload                        — 热重载 MCP 工具
+  GET  /api/config/llm                          — 获取当前 LLM 配置（密钥脱敏）
+  POST /api/config/llm                          — 保存 LLM 配置到 .env 文件
 """
 
 import json
@@ -32,8 +34,9 @@ from fastapi import APIRouter, Request
 # StreamingResponse: 流式 HTTP 响应，服务器可以逐块推送数据（而非一次性返回）
 from fastapi.responses import StreamingResponse
 
-from entity import ChatRequest, DecideRequest, RenameRequest
+from entity import ChatRequest, DecideRequest, RenameRequest, LlmConfigRequest
 from entity.common.api_response import ApiResponse
+from services.config_service import ConfigService
 
 logger = logging.getLogger(__name__)
 
@@ -314,3 +317,64 @@ async def reload_tools(req: Request):
         "loaded": result["loaded"],     # 新加载的 MCP 工具数量
         "total": result["total"],       # 当前工具总数（内置 + MCP）
     })
+
+
+# ============================================
+# 配置管理（LLM 大模型配置）
+# ============================================
+@router.get("/config/llm")
+async def get_llm_config():
+    """
+    获取当前 LLM 配置
+
+    读取 .env 文件中的大模型配置（API 地址、密钥、模型名称），
+    API 密钥做脱敏处理后返回（仅显示前4位和后4位）。
+
+    前端打开设置弹窗时调用此接口，用返回值填充表单。
+
+    Returns:
+        {
+            "code": 0,
+            "data": {
+                "base_url": "https://api.deepseek.com",
+                "api_key_masked": "sk-2****f8df",
+                "model_name": "deepseek-v4-flash",
+                "has_api_key": true
+            }
+        }
+
+    Raises:
+        404: .env 文件不存在
+    """
+    try:
+        config = ConfigService.get_llm_config()
+        return ApiResponse.ok(data=config.model_dump())
+    except FileNotFoundError as e:
+        return ApiResponse.fail(404, str(e))
+
+
+@router.post("/config/llm")
+async def save_llm_config(request: LlmConfigRequest):
+    """
+    保存 LLM 配置到 .env 文件
+
+    前端在设置弹窗中修改配置后点击保存时调用。
+    后端将 BASE_URL、API_KEY、MODEL_NAME 写入 .env 文件。
+
+    注意：
+      - 修改配置后需要重启后端服务才能生效
+      - api_key 为空字符串时不覆盖现有密钥
+      - .env 文件不存在时返回错误提示
+
+    Returns:
+        成功或失败的 ApiResponse
+    """
+    try:
+        ConfigService.save_llm_config(
+            base_url=request.base_url,
+            api_key=request.api_key,
+            model_name=request.model_name,
+        )
+        return ApiResponse.ok(msg="配置已保存并立即生效")
+    except FileNotFoundError as e:
+        return ApiResponse.fail(404, str(e))
