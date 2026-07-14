@@ -5,7 +5,7 @@
 messages 字段是 Message 对象的列表（Pydantic 支持嵌套模型）。
 """
 
-from typing import List
+from typing import List, Optional
 
 from pydantic import BaseModel
 
@@ -26,3 +26,4 @@ class ConversationDetail(BaseModel):
     messages: List[Message]
     created_at: str
     updated_at: str
+    pinned_at: Optional[str] = None  # 顶置时间（ISO 格式），None 表示未顶置

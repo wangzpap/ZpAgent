@@ -25,6 +25,8 @@
       @new-chat="newChat"
       @delete="handleDeleteConversation"
       @rename="handleRenameConversation"
+      @pin="handlePinConversation"
+      @unpin="handleUnpinConversation"
     />
 
     <!-- 主区域：聊天视图（含消息列表 + 输入框 + 工具选择器） -->
@@ -64,6 +66,8 @@ import {
   deleteConversation,
   clearConversationMessages,
   renameConversation,
+  pinConversation,
+  unpinConversation,
   chatStream,
   submitDecisions,
 } from './api/index.js'
@@ -353,6 +357,26 @@ async function handleRenameConversation(convId, newTitle) {
     await loadConversations()
   } catch (e) {
     console.error('重命名会话失败:', e)
+  }
+}
+
+/** 顶置指定会话并刷新列表 */
+async function handlePinConversation(convId) {
+  try {
+    await pinConversation(convId)
+    await loadConversations()
+  } catch (e) {
+    console.error('顶置会话失败:', e)
+  }
+}
+
+/** 取消顶置指定会话并刷新列表 */
+async function handleUnpinConversation(convId) {
+  try {
+    await unpinConversation(convId)
+    await loadConversations()
+  } catch (e) {
+    console.error('取消顶置会话失败:', e)
   }
 }
 

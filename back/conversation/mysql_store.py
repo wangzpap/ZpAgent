@@ -22,7 +22,8 @@ MySQL 会话存储实现（MySQLConversationStore）
       id           VARCHAR(36)   PRIMARY KEY,   -- UUID 格式，如 "550e8400-..."
       title        VARCHAR(255)  NOT NULL,       -- 会话标题
       created_at   VARCHAR(30)   NOT NULL,       -- ISO 格式时间字符串
-      updated_at   VARCHAR(30)   NOT NULL        -- ISO 格式时间字符串
+      updated_at   VARCHAR(30)   NOT NULL,       -- ISO 格式时间字符串
+      pinned_at    VARCHAR(30)   NULL            -- 顶置时间（ISO 格式），NULL 表示未顶置
   );
 """
 
@@ -96,12 +97,14 @@ class MySQLConversationStore(ConversationStore):
     # VARCHAR(36): UUID 格式固定 36 字符（如 "550e8400-e29b-41d4-a716-446655440000"）
     # VARCHAR(255): 标题最大长度，255 是 MySQL 中 VARCHAR 的常见上限
     # VARCHAR(30): ISO 时间字符串最长不超过 30 字符（如 "2024-06-17T14:30:00.123456"）
+    # pinned_at: 可为空，NULL 表示未顶置，非 NULL 表示顶置时间
     _CREATE_TABLE_SQL = """
         CREATE TABLE IF NOT EXISTS conversations (
             id           VARCHAR(36)   PRIMARY KEY,
             title        VARCHAR(255)  NOT NULL    DEFAULT '新对话',
             created_at   VARCHAR(30)   NOT NULL,
             updated_at   VARCHAR(30)   NOT NULL,
+            pinned_at    VARCHAR(30)   NULL,
             INDEX idx_updated_at (updated_at DESC)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin
     """
@@ -206,13 +209,19 @@ class MySQLConversationStore(ConversationStore):
 
     async def get_conversations(self) -> List[Dict[str, Any]]:
         """
-        获取所有会话概要列表（按更新时间倒序）
+        获取所有会话概要列表（已顶置的排前面）
+
+        排序规则：
+          1. 已顶置的会话（pinned_at 不为 NULL）排在最前面
+          2. 已顶置的会话之间按 pinned_at 降序排列（最近顶置的排最前）
+          3. 未顶置的会话按 updated_at 降序排列（最近更新的靠前）
 
         SQL 说明：
-          SELECT id, title, created_at, updated_at
+          SELECT id, title, created_at, updated_at, pinned_at
           FROM conversations
-          ORDER BY updated_at DESC
-          - DESC: 降序排列（最新的排在最前面）
+          ORDER BY pinned_at DESC, updated_at DESC
+          - MySQL 的 ORDER BY DESC 将 NULL 排在最后，所以已顶置的自动排前面
+          - 未顶置的会话之间按 updated_at DESC 排序
 
         Returns:
             会话概要字典列表
@@ -222,9 +231,9 @@ class MySQLConversationStore(ConversationStore):
             # 例如: {"id": "xxx", "title": "新对话", ...} 而非 ("xxx", "新对话", ...)
             async with conn.cursor(aiomysql.DictCursor) as cur:
                 await cur.execute(
-                    "SELECT id, title, created_at, updated_at "
+                    "SELECT id, title, created_at, updated_at, pinned_at "
                     "FROM conversations "
-                    "ORDER BY updated_at DESC"
+                    "ORDER BY pinned_at DESC, updated_at DESC"
                 )
                 # fetchall(): 获取所有查询结果行
                 rows = await cur.fetchall()
@@ -248,7 +257,7 @@ class MySQLConversationStore(ConversationStore):
         async with self._ensure_pool().acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cur:
                 await cur.execute(
-                    "SELECT id, title, created_at, updated_at "
+                    "SELECT id, title, created_at, updated_at, pinned_at "
                     "FROM conversations WHERE id = %s",
                     (conversation_id,),
                 )
@@ -323,6 +332,52 @@ class MySQLConversationStore(ConversationStore):
                     "UPDATE conversations SET title = %s WHERE id = %s",
                     (title, conversation_id),
                 )
+
+    async def pin(self, conversation_id: str) -> bool:
+        """
+        顶置指定会话
+
+        SQL 说明：
+          UPDATE conversations SET pinned_at = %s WHERE id = %s
+          - 设置 pinned_at 为当前时间，使该会话排到列表最前面
+          - cur.rowcount > 0 表示有行被更新（会话存在）
+
+        Args:
+            conversation_id: 会话 ID
+
+        Returns:
+            True 表示操作成功，False 表示会话不存在
+        """
+        now = datetime.now().isoformat()
+        async with self._ensure_pool().acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "UPDATE conversations SET pinned_at = %s WHERE id = %s",
+                    (now, conversation_id),
+                )
+                return cur.rowcount > 0
+
+    async def unpin(self, conversation_id: str) -> bool:
+        """
+        取消顶置指定会话
+
+        SQL 说明：
+          UPDATE conversations SET pinned_at = NULL WHERE id = %s
+          - 将 pinned_at 设为 NULL，恢复到按 updated_at 排序
+
+        Args:
+            conversation_id: 会话 ID
+
+        Returns:
+            True 表示操作成功，False 表示会话不存在
+        """
+        async with self._ensure_pool().acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "UPDATE conversations SET pinned_at = NULL WHERE id = %s",
+                    (conversation_id,),
+                )
+                return cur.rowcount > 0
 
     async def touch(self, conversation_id: str) -> None:
         """

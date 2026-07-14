@@ -84,6 +84,29 @@ export async function renameConversation(conversationId, title) {
   })
 }
 
+/**
+ * 顶置指定会话
+ *
+ * POST /api/conversations/{id}/pin，将会话排到列表最前面。
+ * 已顶置的会话再次调用会刷新顶置时间。
+ */
+export async function pinConversation(conversationId) {
+  await request(`${BASE}/conversations/${conversationId}/pin`, {
+    method: 'POST',
+  })
+}
+
+/**
+ * 取消顶置指定会话
+ *
+ * POST /api/conversations/{id}/unpin，恢复按更新时间排序。
+ */
+export async function unpinConversation(conversationId) {
+  await request(`${BASE}/conversations/${conversationId}/unpin`, {
+    method: 'POST',
+  })
+}
+
 /** 获取所有可用工具列表 */
 export async function fetchTools() {
   const result = await request(`${BASE}/tools`)

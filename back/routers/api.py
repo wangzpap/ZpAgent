@@ -271,6 +271,40 @@ async def rename_conversation(conversation_id: str, request: RenameRequest, req:
 
 
 # ============================================
+# 会话顶置 / 取消顶置
+# ============================================
+@router.post("/conversations/{conversation_id}/pin")
+async def pin_conversation(conversation_id: str, req: Request):
+    """
+    顶置指定会话
+
+    将会话的 pinned_at 设置为当前时间，使其在列表中排在最前面。
+    已顶置的会话再次调用此接口会刷新顶置时间。
+    不存在时返回 ApiResponse.fail(404, ...)。
+    """
+    agent = req.app.state.agent
+    success = await agent.pin_conversation(conversation_id)
+    if not success:
+        return ApiResponse.fail(404, "会话不存在")
+    return ApiResponse.ok()
+
+
+@router.post("/conversations/{conversation_id}/unpin")
+async def unpin_conversation(conversation_id: str, req: Request):
+    """
+    取消顶置指定会话
+
+    将会话的 pinned_at 设置为空，恢复按 updated_at 排序。
+    不存在时返回 ApiResponse.fail(404, ...)。
+    """
+    agent = req.app.state.agent
+    success = await agent.unpin_conversation(conversation_id)
+    if not success:
+        return ApiResponse.fail(404, "会话不存在")
+    return ApiResponse.ok()
+
+
+# ============================================
 # 工具列表
 # ============================================
 @router.get("/tools")

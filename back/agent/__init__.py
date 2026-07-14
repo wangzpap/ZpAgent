@@ -548,9 +548,8 @@ class ReActAgent:
         # 只有 policy 不为 False 的工具会出现在 interrupt_on 中
         interrupt_on = self.tool_registry.get_interrupt_on_map(selected_tools)
 
-        tool_names = [t.name for t in tools]
         logger.info("[Run][Step2] 准备工具: %s | 需审批的工具: %s",
-                    tool_names, list(interrupt_on.keys()) or "(无)")
+                    [t.name for t in tools], list(interrupt_on.keys()) or "(无)")
 
         # ---- Step 2.5: 处理挂起的 HITL 中断 ----
         # 用户可能在上次审批未处理的情况下直接发了新消息，
@@ -849,6 +848,7 @@ class ReActAgent:
             "messages": messages,
             "created_at": meta["created_at"],
             "updated_at": meta["updated_at"],
+            "pinned_at": meta.get("pinned_at"),
         }
         if pending_actions:
             result["pending_actions"] = pending_actions
@@ -886,6 +886,24 @@ class ReActAgent:
             return False
         await self.registry.update_title(conversation_id, title)
         return True
+
+    async def pin_conversation(self, conversation_id: str) -> bool:
+        """
+        顶置指定会话
+
+        将会话的 pinned_at 设为当前时间，使其在列表最前面展示。
+        会话不存在时返回 False。
+        """
+        return await self.registry.pin(conversation_id)
+
+    async def unpin_conversation(self, conversation_id: str) -> bool:
+        """
+        取消顶置指定会话
+
+        将会话的 pinned_at 设为 None，恢复按 updated_at 排序。
+        会话不存在时返回 False。
+        """
+        return await self.registry.unpin(conversation_id)
 
     @staticmethod
     def _format_message(msg) -> Dict[str, Any]:

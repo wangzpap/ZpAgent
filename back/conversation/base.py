@@ -16,6 +16,7 @@
       "title": str,        # 会话标题（用于 UI 列表展示）
       "created_at": str,   # 创建时间（ISO 格式字符串）
       "updated_at": str,   # 最后更新时间（ISO 格式字符串）
+      "pinned_at": str | None,  # 顶置时间（ISO 格式），None 表示未顶置
   }
 """
 
@@ -152,6 +153,37 @@ class ConversationStore(ABC):
         Args:
             conversation_id: 会话 ID
             title: 新的标题文本
+        """
+        ...
+
+    @abstractmethod
+    async def pin(self, conversation_id: str) -> bool:
+        """
+        顶置指定会话
+
+        将会话的 pinned_at 设置为当前时间，使该会话在列表最前面展示。
+        已顶置的会话再次调用此方法会更新时间戳（刷新顶置顺序）。
+
+        Args:
+            conversation_id: 会话 ID
+
+        Returns:
+            True 表示操作成功，False 表示会话不存在
+        """
+        ...
+
+    @abstractmethod
+    async def unpin(self, conversation_id: str) -> bool:
+        """
+        取消顶置指定会话
+
+        将会话的 pinned_at 设置为 None，恢复到按 updated_at 排序。
+
+        Args:
+            conversation_id: 会话 ID
+
+        Returns:
+            True 表示操作成功，False 表示会话不存在
         """
         ...
 

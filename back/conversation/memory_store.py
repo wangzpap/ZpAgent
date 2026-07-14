@@ -36,6 +36,7 @@ class InMemoryConversationStore(ConversationStore):
                 "title": str,        # 会话标题（用于 UI 列表展示）
                 "created_at": str,   # 创建时间（ISO 格式字符串）
                 "updated_at": str,   # 最后更新时间（ISO 格式字符串）
+                "pinned_at": str | None,  # 顶置时间，None 表示未顶置
             }
         }
 
@@ -82,35 +83,41 @@ class InMemoryConversationStore(ConversationStore):
                 "title": "新对话",
                 "created_at": now,
                 "updated_at": now,
+                "pinned_at": None,   # 新创建的会话默认未顶置
             }
         return conv_id
 
     async def get_conversations(self) -> List[Dict[str, Any]]:
         """
-        获取所有会话概要列表（按更新时间倒序）
+        获取所有会话概要列表（已顶置的排前面，按更新时间倒序）
+
+        排序规则：
+          1. 已顶置的会话（pinned_at 不为空）排在最前面
+          2. 已顶置的会话之间按 pinned_at 降序排列（最近顶置的排最前）
+          3. 未顶置的会话按 updated_at 降序排列（最近更新的靠前）
 
         Returns:
-            会话字典列表，每项包含 id、title、created_at、updated_at
-            排序：updated_at 降序（最近更新的会话排在最前面）
+            会话字典列表，每项包含 id、title、created_at、updated_at、pinned_at
         """
         async with self._lock:
-            # 列表推导式：Python 的简洁写法，等价于 for 循环 + append
-            # 这里只提取前端需要的字段，不暴露内部完整数据结构
+            # 提取前端需要的字段（含 pinned_at）
             result = [
                 {
                     "id": c["id"],
                     "title": c["title"],
                     "created_at": c["created_at"],
                     "updated_at": c["updated_at"],
+                    "pinned_at": c.get("pinned_at"),  # 兼容无 pinned_at 的旧数据
                 }
                 for c in self._conversations.values()
             ]
-        # sort(): 原地排序列表
-        # key=lambda x: x["updated_at"]: 按 updated_at 字段排序
-        # lambda: Python 的匿名函数（单行表达式函数），类似 Java 的 lambda 或 JS 的箭头函数
-        # reverse=True: 降序排列（最新的在前）
-        result.sort(key=lambda x: x["updated_at"], reverse=True)
-        return result
+
+        # 排序：顶置的排前面（按 pinned_at 降序），未顶置的排后面（按 updated_at 降序）
+        pinned = [c for c in result if c["pinned_at"]]
+        unpinned = [c for c in result if not c["pinned_at"]]
+        pinned.sort(key=lambda x: x["pinned_at"], reverse=True)
+        unpinned.sort(key=lambda x: x["updated_at"], reverse=True)
+        return pinned + unpinned
 
     async def get_conversation(self, conversation_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -173,6 +180,44 @@ class InMemoryConversationStore(ConversationStore):
         async with self._lock:
             if conversation_id in self._conversations:
                 self._conversations[conversation_id]["title"] = title
+
+    async def pin(self, conversation_id: str) -> bool:
+        """
+        顶置指定会话
+
+        将该会话的 pinned_at 设为当前时间。已顶置的会话会刷新顶置时间。
+
+        Args:
+            conversation_id: 会话 ID
+
+        Returns:
+            True 表示操作成功，False 表示会话不存在
+        """
+        async with self._lock:
+            if conversation_id not in self._conversations:
+                return False
+            self._conversations[conversation_id]["pinned_at"] = (
+                datetime.now().isoformat()
+            )
+        return True
+
+    async def unpin(self, conversation_id: str) -> bool:
+        """
+        取消顶置指定会话
+
+        将该会话的 pinned_at 设为 None，恢复按 updated_at 排序。
+
+        Args:
+            conversation_id: 会话 ID
+
+        Returns:
+            True 表示操作成功，False 表示会话不存在
+        """
+        async with self._lock:
+            if conversation_id not in self._conversations:
+                return False
+            self._conversations[conversation_id]["pinned_at"] = None
+        return True
 
     async def touch(self, conversation_id: str) -> None:
         """

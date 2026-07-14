@@ -32,11 +32,15 @@
         v-for="conv in conversations"
         :key="conv.id"
         class="conv-item"
-        :class="{ active: conv.id === currentId, editing: editingId === conv.id }"
+        :class="{ active: conv.id === currentId, editing: editingId === conv.id, pinned: conv.pinned_at }"
         @click="editingId !== conv.id && $emit('select', conv.id)"
       >
         <svg class="conv-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        </svg>
+        <!-- 顶置标记（仅已顶置的会话显示） -->
+        <svg v-if="conv.pinned_at" class="pin-badge" width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/>
         </svg>
         <!-- 编辑模式：输入框 -->
         <div v-if="editingId === conv.id" class="rename-wrapper">
@@ -77,6 +81,16 @@
                   <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
                 </svg>
                 重命名
+              </button>
+              <!-- 顶置 / 取消顶置 -->
+              <button
+                class="conv-dropdown-item"
+                @click="handleTogglePin(conv)"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/>
+                </svg>
+                {{ conv.pinned_at ? '取消顶置' : '顶置' }}
               </button>
               <button class="conv-dropdown-item danger" @click="handleDelete(conv.id)">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -141,7 +155,7 @@ const props = defineProps({
   currentId:     { type: String, default: null },
 })
 
-const emit = defineEmits(['select', 'new-chat', 'delete', 'rename'])
+const emit = defineEmits(['select', 'new-chat', 'delete', 'rename', 'pin', 'unpin'])
 
 // ---- 设置弹窗状态 ----
 const showSettings = ref(false)
@@ -249,6 +263,16 @@ function handleDelete(convId) {
   closeMenu()
   requestDelete(convId)
 }
+
+/** 从菜单触发顶置 / 取消顶置 */
+function handleTogglePin(conv) {
+  closeMenu()
+  if (conv.pinned_at) {
+    emit('unpin', conv.id)
+  } else {
+    emit('pin', conv.id)
+  }
+}
 </script>
 
 <style scoped>
@@ -292,6 +316,29 @@ function handleDelete(convId) {
 .conv-item.active .conv-icon {
   opacity: 0.95;
   color: var(--accent);
+}
+
+/* ---- 顶置标记 ---- */
+.pin-badge {
+  flex-shrink: 0;
+  color: var(--accent);
+  opacity: 0.6;
+  margin-left: -2px;
+  transition: opacity 0.2s;
+}
+
+.conv-item:hover .pin-badge {
+  opacity: 0.9;
+}
+
+.conv-item.active .pin-badge {
+  opacity: 1;
+  color: var(--accent);
+}
+
+/* 已顶置的会话标题轻微强调 */
+.conv-item.pinned .title {
+  font-weight: 500;
 }
 
 .conv-empty {
