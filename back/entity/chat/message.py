@@ -28,6 +28,9 @@ class Message(BaseModel):
     """
     # Literal[...] 限定 role 只能是这四个字符串之一，其他值会校验失败
     # ... 是 Pydantic 的特殊标记，表示该字段为必填项（不能省略）
+    id: Optional[str] = Field(
+        default=None, description="消息唯一标识（来自 LangChain message.id）"
+    )
     role: Literal["system", "user", "assistant", "tool"] = Field(
         ..., description="消息角色"
     )

@@ -909,9 +909,10 @@ class ReActAgent:
     def _format_message(msg) -> Dict[str, Any]:
         """将 LangChain Message 对象格式化为前端展示用的字典"""
         if isinstance(msg, HumanMessage):
-            return {"role": "user", "content": str(msg.content)}
+            return {"id": msg.id, "role": "user", "content": str(msg.content)}
         elif isinstance(msg, AIMessage):
             result: Dict[str, Any] = {
+                "id": msg.id,
                 "role": "assistant",
                 "content": str(msg.content) if msg.content else "",
             }
@@ -923,11 +924,12 @@ class ReActAgent:
             return result
         elif isinstance(msg, ToolMessage):
             return {
+                "id": msg.id,
                 "role": "tool",
                 "content": str(msg.content),
                 "tool_call_id": getattr(msg, "tool_call_id", ""),
             }
         elif isinstance(msg, SystemMessage):
-            return {"role": "system", "content": str(msg.content)}
+            return {"id": msg.id, "role": "system", "content": str(msg.content)}
         else:
-            return {"role": "user", "content": str(msg.content)}
+            return {"id": getattr(msg, "id", ""), "role": "user", "content": str(msg.content)}
