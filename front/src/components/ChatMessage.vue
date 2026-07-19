@@ -72,6 +72,25 @@
         </div>
       </template>
 
+      <!-- 一键复制按钮（仅助手消息，hover 气泡时显示） -->
+      <div v-if="message.role === 'assistant' && assistantText" class="copy-btn-area">
+        <button class="copy-btn" :class="{ copied }" @click.stop="copyContent" :title="copied ? '已复制' : '复制回复内容'">
+          <template v-if="!copied">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+            <span>复制</span>
+          </template>
+          <template v-else>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            <span>已复制</span>
+          </template>
+        </button>
+      </div>
+
       <!-- 用户消息正文 -->
       <div
         v-if="message.role === 'user' && message.content"
@@ -95,16 +114,39 @@
 </template>
 
 <script setup>
+import { ref, computed } from 'vue'
 import { marked } from 'marked'
 import { toolDisplayName } from '../utils/index.js'
 
 // 配置 marked：GFM 模式 + 换行转 <br>
 marked.setOptions({ breaks: true, gfm: true })
 
-defineProps({
+const props = defineProps({
   message:  { type: Object, required: true },
   isLatest: { type: Boolean, default: false },
 })
+
+/** 提取助手消息中的纯文本内容（用于复制） */
+const assistantText = computed(() => {
+  if (!props.message.segments) return ''
+  return props.message.segments
+    .filter(s => s.type === 'text' && s.content)
+    .map(s => s.content)
+    .join('\n')
+})
+
+const copied = ref(false)
+
+/** 一键复制助手回复内容到剪贴板 */
+async function copyContent() {
+  try {
+    await navigator.clipboard.writeText(assistantText.value)
+    copied.value = true
+    setTimeout(() => { copied.value = false }, 2000)
+  } catch {
+    // 降级：静默失败
+  }
+}
 
 /** 渲染 Markdown 文本为 HTML */
 function renderMd(text) {
@@ -342,5 +384,49 @@ function renderMd(text) {
 .message-bubble.assistant.md-content :deep(th) {
   background: var(--bg-hover);
   font-weight: 600;
+}
+
+/* ---- 一键复制按钮（hover 气泡时显示） ---- */
+.copy-btn-area {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+}
+
+.copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xxs);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: all 0.2s var(--ease-out);
+  opacity: 0;
+  transform: translateY(2px);
+}
+
+/* hover 消息行时显示复制按钮 */
+.message-wrapper:hover .copy-btn {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.copy-btn:hover {
+  color: var(--accent);
+  border-color: var(--border-accent);
+  background: var(--accent-dim);
+}
+
+/* 复制成功态 */
+.copy-btn.copied {
+  color: var(--success);
+  border-color: rgba(74, 222, 128, 0.30);
+  background: rgba(74, 222, 128, 0.10);
+  opacity: 1;
 }
 </style>
