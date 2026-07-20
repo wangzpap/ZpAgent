@@ -19,6 +19,7 @@ FastAPI 路由体系说明：
   POST /api/conversations/{id}/rename           — 重命名会话
   POST /api/conversations/{id}/delete           — 删除会话
   POST /api/conversations/{id}/messages/clear   — 清空会话消息历史
+  POST /api/conversations/{id}/messages/batch-delete — 批量删除消息
   GET  /api/tools                               — 获取可用工具列表
   POST /api/tools/reload                        — 热重载 MCP 工具
   GET  /api/config/llm                          — 获取当前 LLM 配置（密钥脱敏）
@@ -34,7 +35,7 @@ from fastapi import APIRouter, Request
 # StreamingResponse: 流式 HTTP 响应，服务器可以逐块推送数据（而非一次性返回）
 from fastapi.responses import StreamingResponse
 
-from entity import ChatRequest, DecideRequest, RenameRequest, LlmConfigRequest
+from entity import ChatRequest, DecideRequest, RenameRequest, LlmConfigRequest, BatchDeleteRequest
 from entity.common.api_response import ApiResponse
 from services.config_service import ConfigService
 
@@ -253,6 +254,32 @@ async def clear_conversation_messages(conversation_id: str, req: Request):
     if not success:
         return ApiResponse.fail(404, "会话不存在")
     return ApiResponse.ok()
+
+
+@router.post("/conversations/{conversation_id}/messages/batch-delete")
+async def batch_delete_messages(
+    conversation_id: str, request: BatchDeleteRequest, req: Request
+):
+    """
+    批量删除消息（单条删除时传单元素数组即可）
+
+    删除最早匹配消息及其之后的所有消息（级联删除），保证对话上下文一致。
+    单条删除只需传入包含一个 ID 的数组。
+
+    Returns:
+        成功:   {"code": 1, "msg": "ok", "data": {"deleted_count": 3}}
+        失败:   会话不存在     → {"code": 404, "msg": "会话不存在"}
+                消息 ID 未匹配 → {"code": 404, "msg": "未找到匹配的消息"}
+    """
+    agent = req.app.state.agent
+    deleted_count = await agent.delete_messages(
+        conversation_id, request.message_ids
+    )
+    if deleted_count is None:
+        return ApiResponse.fail(404, "会话不存在")
+    if deleted_count == 0:
+        return ApiResponse.fail(404, "未找到匹配的消息")
+    return ApiResponse.ok({"deleted_count": deleted_count})
 
 
 @router.post("/conversations/{conversation_id}/rename")

@@ -8,5 +8,6 @@ from entity.chat.message import Message
 from entity.chat.chat_request import ChatRequest
 from entity.chat.decision import Decision
 from entity.chat.decide_request import DecideRequest
+from entity.chat.batch_delete_request import BatchDeleteRequest
 
-__all__ = ["Message", "ChatRequest", "Decision", "DecideRequest"]
+__all__ = ["Message", "ChatRequest", "Decision", "DecideRequest", "BatchDeleteRequest"]

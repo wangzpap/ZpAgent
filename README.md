@@ -10,6 +10,7 @@
 - **Human-in-the-Loop**：敏感工具需用户审批后执行，支持批准/编辑/拒绝/自行回复
 - **多轮会话记忆**：双层存储架构（元数据 + 对话状态），支持 InMemory / MySQL 后端切换
 - **会话顶置**：重要会话可通过三点菜单顶置到列表顶部，支持多会话顶置、顶置排序和取消顶置
+- **消息删除与回退**：用户消息支持"删除"（级联删除该消息及后续所有消息）和"回退"（删除后回填输入框重新编辑），保证对话上下文一致
 - **MCP 工具扩展**：通过 `mcp_servers.json` 配置加载外部 MCP 工具服务
 - **页面配置大模型**：前端设置面板直接修改 API 地址、密钥和模型名称，保存后热重载立即生效，无需重启服务
 
@@ -31,7 +32,11 @@
 
 ![image-20260704111700417](README.assets/image-20260704111700417.png)
 
-页面支持模型配置
+- 支持消息回退与删除
+
+  ![image-20260720234554243](README.assets/image-20260720234554243.png)
+
+- 页面支持模型配置
 
 ![image-20260711131759354](README.assets/image-20260711131759354.png)
 
@@ -393,6 +398,7 @@ def my_new_tool(param: str) -> str:
 | `POST` | `/api/conversations/{id}/unpin` | 取消顶置会话 |
 | `POST` | `/api/conversations/{id}/delete` | 删除会话 |
 | `POST` | `/api/conversations/{id}/messages/clear` | 清空会话消息 |
+| `POST` | `/api/conversations/{id}/messages/batch-delete` | 批量删除消息（级联删除最早匹配消息及其后所有消息） |
 | `GET` | `/api/tools` | 获取可用工具列表（含 tool_type、server_name） |
 | `POST` | `/api/tools/reload` | 热重载 MCP 工具 |
 | `GET` | `/api/config/llm` | 获取当前 LLM 配置（密钥脱敏） |

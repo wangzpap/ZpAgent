@@ -627,7 +627,6 @@ html, body {
   100% { transform: scale(1); }
 }
 
-
 /* ============================================
    加载动画
    ============================================ */
@@ -778,7 +777,7 @@ button:focus-visible {
    HITL 审批面板
    ============================================ */
 .approval-panel {
-  margin: 0 28px 20px;
+  margin: 0 28px 12px;
   max-width: 780px;
   width: 100%;
   margin-left: auto;

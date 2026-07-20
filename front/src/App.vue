@@ -37,17 +37,15 @@
         :tools="availableTools"
         :selected-tools="selectedTools"
         :conversation-id="currentConversationId"
+        :prefill-text="prefillText"
+        :pending-actions="pendingActions"
         @send="sendMessage"
         @toggle-tool="toggleTool"
         @reload-tools="handleReloadTools"
         @clear-history="handleClearHistory"
-      />
-
-      <!-- HITL 审批面板：当 Agent 的工具调用需要人工审批时显示 -->
-      <ApprovalPanel
-        v-if="pendingActions"
-        :actions="pendingActions"
-        @submit="handleApprovalSubmit"
+        @delete-message="handleDeleteMessage"
+        @rewind="handleRewind"
+        @approval-submit="handleApprovalSubmit"
       />
     </div>
   </div>
@@ -57,7 +55,6 @@
 import { ref, reactive, onMounted } from 'vue'
 import ConversationList from './components/ConversationList.vue'
 import ChatView from './views/ChatView.vue'
-import ApprovalPanel from './components/ApprovalPanel.vue'
 import {
   fetchConversations,
   fetchHistory,
@@ -65,6 +62,7 @@ import {
   reloadTools,
   deleteConversation,
   clearConversationMessages,
+  batchDeleteMessages,
   renameConversation,
   pinConversation,
   unpinConversation,
@@ -125,13 +123,27 @@ function processSseEvent(assistantMsg, eventType, data) {
     }
 
     case 'thinking': {
-      segs.push({
-        type: 'tool_call',
-        tool: data.tool,
-        call_id: data.call_id || '',
-        args: data.args,
-        observation: data.observation ?? null,
-      })
+      // 先找是否有 approval_required 阶段预插入的 pending 段（同工具名 + observation=null）
+      let existing = null
+      for (let k = segs.length - 1; k >= 0; k--) {
+        if (segs[k].type === 'tool_call' && segs[k].tool === data.tool && segs[k].observation == null) {
+          existing = segs[k]
+          break
+        }
+      }
+      if (existing) {
+        // 用后端 resume 返回的真实 call_id / args 更新 pending 段
+        existing.call_id = data.call_id || ''
+        if (data.args) existing.args = data.args
+      } else {
+        segs.push({
+          type: 'tool_call',
+          tool: data.tool,
+          call_id: data.call_id || '',
+          args: data.args,
+          observation: data.observation ?? null,
+        })
+      }
       break
     }
 
@@ -178,11 +190,76 @@ function processSseEvent(assistantMsg, eventType, data) {
       break
     }
 
-    case 'approval_required':
-      // 返回标记，由调用方处理（设置 pendingActions 或再次弹出审批面板）
+    case 'approval_required': {
+      // 在助手消息中插入等待审批的工具调用段（observation=null 显示 loading）
+      if (data.actions && data.actions.length > 0) {
+        for (const action of data.actions) {
+          // 避免重复插入（resume 后可能再次触发 approval_required）
+          const dup = segs.find(s => s.type === 'tool_call' && s.tool === action.name && s.observation == null)
+          if (!dup) {
+            segs.push({
+              type: 'tool_call',
+              tool: action.name,
+              call_id: '',
+              args: action.args || {},
+              observation: null,
+            })
+          }
+        }
+      }
       return 'approval_required'
+    }
   }
   return null
+}
+
+/**
+ * 创建流式消息管理器
+ *
+ * 持有"当前正在填充的助手消息"引用。当会新增内容的事件（token / thinking / error）
+ * 到达时，若当前消息的最后一段是**已完成**的工具调用（observation != null），
+ * 则自动新建一条 reactive 助手消息并 push 进 messages.value，后续内容写入新消息。
+ *
+ * 目的：使流式渲染与历史加载渲染保持一致。
+ *   后端将"工具结果后的总结"存储为独立的 AIMessage，processHistoryMessages 会
+ *   把它转成一条独立的助手消息（自带头像）；若流式时把总结追加进含工具调用的
+ *   同一条消息，就会导致"流式无头像、刷新后有头像"的显示不一致。
+ *
+ * @param {Object} firstMsg - 初始的 reactive 助手消息（已 push 进 messages.value）
+ * @returns {{ process: Function, current: Object }}
+ *   process(eventType, data) — 处理 SSE 事件，必要时自动拆分出新消息
+ *   current — 当前正在填充的消息（catch 中追加错误文本时使用）
+ */
+function createStreamManager(firstMsg) {
+  const state = { current: firstMsg }
+
+  /** 若当前消息最后一段是已完成的工具调用，则新建消息承载后续内容 */
+  function ensureFreshMessage(eventType) {
+    // 只有会新增内容的事件才需要判断是否拆分
+    if (eventType !== 'token' && eventType !== 'thinking' && eventType !== 'error') return
+    const segs = state.current.segments
+    const last = segs[segs.length - 1]
+    // 最后一段是已完成的工具调用 → 后续内容应独立成新消息（与历史渲染一致）
+    if (last && last.type === 'tool_call' && last.observation != null) {
+      const next = reactive({
+        id: 'temp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+        role: 'assistant',
+        segments: [],
+      })
+      messages.value.push(next)
+      state.current = next
+    }
+  }
+
+  return {
+    get current() {
+      return state.current
+    },
+    process(eventType, data) {
+      ensureFreshMessage(eventType)
+      return processSseEvent(state.current, eventType, data)
+    },
+  }
 }
 
 // ============================================
@@ -257,6 +334,25 @@ async function selectConversation(convId) {
     } else {
       pendingActions.value = null
     }
+
+    // ---- 恢复审批等待中的工具调用 loading 段 ----
+    // processHistoryMessages 给未执行工具生成的 observation=''（空字符串），
+    // 需要替换为 observation=null 才能触发 loading 动画
+    if (pendingActions.value && pendingActions.value.length > 0) {
+      const pendingNames = new Set(pendingActions.value.map(a => a.name))
+      // 找到最后一条助手消息
+      for (let k = messages.value.length - 1; k >= 0; k--) {
+        const m = messages.value[k]
+        if (m.role === 'assistant' && m.segments) {
+          for (const seg of m.segments) {
+            if (seg.type === 'tool_call' && pendingNames.has(seg.tool) && seg.observation === '') {
+              seg.observation = null  // 触发 loading 动画
+            }
+          }
+          break
+        }
+      }
+    }
   } catch (e) {
     console.error('加载会话历史失败:', e)
   }
@@ -279,7 +375,7 @@ function processHistoryMessages(raw) {
     const msg = raw[i]
 
     if (msg.role === 'user') {
-      result.push({ role: 'user', content: msg.content })
+      result.push({ id: msg.id, role: 'user', content: msg.content })
       i++
     } else if (msg.role === 'assistant') {
       const segments = []
@@ -309,7 +405,7 @@ function processHistoryMessages(raw) {
         }
       }
 
-      result.push({ role: 'assistant', segments })
+      result.push({ id: msg.id, role: 'assistant', segments })
       i++
     } else {
       // 跳过独立的 tool 消息
@@ -395,6 +491,46 @@ async function handleClearHistory() {
   }
 }
 
+/** 删除指定消息（及其之后所有消息） */
+async function handleDeleteMessage(messageId) {
+  const convId = currentConversationId.value
+  if (!convId || !messageId) return
+  try {
+    const result = await batchDeleteMessages(convId, [messageId])
+    console.log(`已删除 ${result.deleted_count} 条消息`)
+    // 重新加载历史以获取最新的消息列表（含正确的消息 ID）
+    if (convId === currentConversationId.value) {
+      const data = await fetchHistory(convId)
+      messages.value = processHistoryMessages(data.messages || [])
+      pendingActions.value = data.pending_actions || null
+    }
+  } catch (e) {
+    console.error('删除消息失败:', e)
+  }
+}
+
+/** 回退：将消息内容填入输入框，并删除该消息及之后所有消息 */
+async function handleRewind({ id, content }) {
+  const convId = currentConversationId.value
+  if (!convId || !id) return
+  try {
+    await batchDeleteMessages(convId, [id])
+    // 重新加载历史
+    if (convId === currentConversationId.value) {
+      const data = await fetchHistory(convId)
+      messages.value = processHistoryMessages(data.messages || [])
+      pendingActions.value = data.pending_actions || null
+    }
+    // 回填消息内容到输入框（用对象 + 时间戳确保相同文本也能触发 watch）
+    prefillText.value = { text: content, ts: Date.now() }
+  } catch (e) {
+    console.error('回退失败:', e)
+  }
+}
+
+// 回退时的预填文本（用对象包装，确保相同文本内容也能触发 watch）
+const prefillText = ref({ text: '', ts: 0 })
+
 // ============================================
 // 工具选择
 // ============================================
@@ -448,18 +584,22 @@ async function sendMessage(text) {
   }
   pendingActions.value = null
 
-  // 添加用户消息
-  messages.value.push({ role: 'user', content: text })
+  // 添加用户消息（临时 ID：流式过程中消息还没有 LangChain 分配的正式 ID）
+  messages.value.push({ id: 'temp_' + Date.now(), role: 'user', content: text })
 
   isLoading.value = true
   abortController = new AbortController()
 
   // 创建空的助手消息（reactive 包装确保 segments 的深层变更能被 Vue 追踪）
   const assistantMsg = reactive({
+    id: 'temp_' + (Date.now() + 1),
     role: 'assistant',
     segments: [],
   })
   messages.value.push(assistantMsg)
+
+  // 流式消息管理器：工具调用完成后，后续内容自动拆分到新消息（与历史渲染一致，各有头像）
+  const stream = createStreamManager(assistantMsg)
 
   try {
     await chatStream(
@@ -469,7 +609,7 @@ async function sendMessage(text) {
         selected_tools: selectedTools.value,
       },
       (eventType, data) => {
-        const result = processSseEvent(assistantMsg, eventType, data)
+        const result = stream.process(eventType, data)
         if (result === 'approval_required') {
           // 工具调用需要审批 → 设置待审批列表，显示审批面板
           pendingActions.value = data.actions
@@ -481,7 +621,7 @@ async function sendMessage(text) {
     // AbortError 是用户主动取消，不算错误
     if (e.name !== 'AbortError') {
       console.error('聊天请求失败:', e)
-      const segs = assistantMsg.segments
+      const segs = stream.current.segments
       const last = segs[segs.length - 1]
       const errText = '\n[网络错误] 请求失败，请检查后端服务是否运行。'
       if (last && last.type === 'text') {
@@ -494,6 +634,20 @@ async function sendMessage(text) {
     isLoading.value = false
     abortController = null
     await loadConversations()
+    // 流式正常结束（非 HITL 中断）时，重新加载历史用真实 ID 替换临时 ID
+    // HITL 中断时跳过：此时工具尚未执行，重载历史会产生 observation='' 的假完成段，
+    // 与 resume 恢复后 thinking 事件产生的段重复，导致两个工具调用框
+    if (!pendingActions.value) {
+      const convId = currentConversationId.value
+      if (convId) {
+        try {
+          const data = await fetchHistory(convId)
+          messages.value = processHistoryMessages(data.messages || [])
+        } catch {
+          // 历史加载失败不影响主流程
+        }
+      }
+    }
   }
 }
 
@@ -518,18 +672,40 @@ async function handleApprovalSubmit(decisions) {
   isLoading.value = true
   abortController = new AbortController()
 
-  // 创建新的助手消息用于展示恢复执行后的流式输出
-  const assistantMsg = reactive({
-    role: 'assistant',
-    segments: [],
-  })
-  messages.value.push(assistantMsg)
+  // 复用最后一条助手消息作为 resume 流式目标：
+  // approval_required 阶段已把待执行工具段（observation=null，loading 中）预插入该消息，
+  // resume 的 thinking 事件会按工具名匹配并更新它的 call_id，随后 tool_result 按 call_id
+  // 填充结果、结束 loading——整个过程只有一张工具卡片。
+  // 若另建空消息，thinking/tool_result 会写进新消息，旧的 pending 段被遗弃而永远 loading，
+  // 界面上就会"结果已出、loading 还在转"。
+  // reactive() 幂等：消息已是响应式则原样返回；历史重载后的普通对象则包成代理，
+  // 保证 segments 深层变更可被 Vue 追踪。
+  let assistantMsg = null
+  for (let k = messages.value.length - 1; k >= 0; k--) {
+    if (messages.value[k].role === 'assistant') {
+      assistantMsg = reactive(messages.value[k])
+      messages.value[k] = assistantMsg
+      break
+    }
+  }
+  // 兜底：没有助手消息（审批必然跟在助手消息之后，理论上不会走到这里）则新建
+  if (!assistantMsg) {
+    assistantMsg = reactive({
+      id: 'temp_resume_' + Date.now(),
+      role: 'assistant',
+      segments: [],
+    })
+    messages.value.push(assistantMsg)
+  }
+
+  // 流式消息管理器：工具调用完成后，后续总结内容自动拆分到新消息（与历史渲染一致，各有头像）
+  const stream = createStreamManager(assistantMsg)
 
   try {
     await submitDecisions(
       { conversation_id: convId, decisions },
       (eventType, data) => {
-        const result = processSseEvent(assistantMsg, eventType, data)
+        const result = stream.process(eventType, data)
         if (result === 'approval_required') {
           // Agent 恢复执行后再次触发了需要审批的工具调用（多轮审批）
           pendingActions.value = data.actions
@@ -540,13 +716,27 @@ async function handleApprovalSubmit(decisions) {
   } catch (e) {
     if (e.name !== 'AbortError') {
       console.error('审批提交失败:', e)
-      const segs = assistantMsg.segments
+      const segs = stream.current.segments
       segs.push({ type: 'text', content: '\n[网络错误] 审批提交失败，请检查后端服务。' })
     }
   } finally {
     isLoading.value = false
     abortController = null
     await loadConversations()
+    // 流式正常结束（非 HITL 中断）时，重新加载历史用真实 ID 替换临时 ID
+    // HITL 中断时跳过：此时工具尚未执行，重载历史会产生 observation='' 的假完成段，
+    // 与 resume 恢复后 thinking 事件产生的段重复，导致两个工具调用框
+    if (!pendingActions.value) {
+      const convId = currentConversationId.value
+      if (convId) {
+        try {
+          const data = await fetchHistory(convId)
+          messages.value = processHistoryMessages(data.messages || [])
+        } catch {
+          // 历史加载失败不影响主流程
+        }
+      }
+    }
   }
 }
 </script>

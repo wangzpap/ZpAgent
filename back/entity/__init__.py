@@ -16,6 +16,7 @@ from entity.chat.message import Message
 from entity.chat.chat_request import ChatRequest
 from entity.chat.decision import Decision
 from entity.chat.decide_request import DecideRequest
+from entity.chat.batch_delete_request import BatchDeleteRequest
 
 # ---- 会话管理 ----
 from entity.conversation.conversation_info import ConversationInfo
@@ -35,6 +36,7 @@ __all__ = [
     "ChatRequest",
     "Decision",
     "DecideRequest",
+    "BatchDeleteRequest",
     # conversation
     "ConversationInfo",
     "ConversationDetail",

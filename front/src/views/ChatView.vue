@@ -19,11 +19,20 @@
     <!-- 消息列表 -->
     <ChatMessage
       v-for="(msg, idx) in messages"
-      :key="idx"
+      :key="msg.id || idx"
       :message="msg"
       :is-latest="idx === messages.length - 1 && isLoading"
+      @delete="(msgId) => $emit('delete-message', msgId)"
+      @rewind="(payload) => $emit('rewind', payload)"
     />
   </div>
+
+  <!-- HITL 审批面板：放在消息列表和输入框之间 -->
+  <ApprovalPanel
+    v-if="pendingActions"
+    :actions="pendingActions"
+    @submit="(decisions) => $emit('approval-submit', decisions)"
+  />
 
   <!-- 输入区域 -->
   <div class="input-area">
@@ -87,6 +96,7 @@
 import { ref, nextTick, watch } from 'vue'
 import ChatMessage from '../components/ChatMessage.vue'
 import ToolSelector from '../components/ToolSelector.vue'
+import ApprovalPanel from '../components/ApprovalPanel.vue'
 
 const props = defineProps({
   messages:        { type: Array, default: () => [] },
@@ -94,10 +104,15 @@ const props = defineProps({
   tools:           { type: Array, default: () => [] },
   selectedTools:   { type: Array, default: () => [] },
   conversationId:  { type: String, default: null },
+  prefillText:     { type: Object, default: () => ({ text: '', ts: 0 }) },
+  pendingActions:  { type: Array, default: null },
 })
 
-// 事件：send（发送消息）、toggle-tool（切换工具选中）、reload-tools（刷新 MCP 工具）、clear-history（清空对话上下文）
-const emit = defineEmits(['send', 'toggle-tool', 'reload-tools', 'clear-history'])
+// 事件
+const emit = defineEmits([
+  'send', 'toggle-tool', 'reload-tools', 'clear-history',
+  'delete-message', 'rewind', 'approval-submit',
+])
 
 const inputText = ref('')
 const messagesContainer = ref(null)
@@ -108,6 +123,23 @@ watch(
   () => props.messages,
   () => nextTick(scrollToBottom),
   { deep: true }
+)
+
+// 回退预填文本：prefillText.ts 变化时填入输入框并聚焦
+//（用 ts 时间戳而非直接比较对象，确保相同文本内容也能触发）
+watch(
+  () => props.prefillText?.ts || 0,
+  (ts) => {
+    if (ts && props.prefillText?.text) {
+      inputText.value = props.prefillText.text
+      nextTick(() => {
+        if (inputRef.value) {
+          inputRef.value.focus()
+          autoResize()
+        }
+      })
+    }
+  }
 )
 
 /** 滚动消息列表到底部 */

@@ -72,8 +72,9 @@
         </div>
       </template>
 
-      <!-- 一键复制按钮（仅助手消息，hover 气泡时显示） -->
+      <!-- 操作按钮区（hover 气泡时显示，仅助手消息渲染，避免用户消息下出现空 div 占位） -->
       <div v-if="message.role === 'assistant' && assistantText" class="copy-btn-area">
+        <!-- 一键复制按钮 -->
         <button class="copy-btn" :class="{ copied }" @click.stop="copyContent" :title="copied ? '已复制' : '复制回复内容'">
           <template v-if="!copied">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -100,6 +101,73 @@
         {{ message.content }}
       </div>
 
+      <!-- 用户消息删除按钮（气泡外右下角，hover 消息行时显示） -->
+      <div
+        v-if="message.role === 'user' && message.id && !isTempId(message.id)"
+        class="user-delete-row"
+      >
+        <!-- 回退按钮 -->
+        <div class="user-delete-area" :class="{ 'has-popover': showRewindPopover }">
+          <button
+            class="user-action-btn"
+            :class="{ active: showRewindPopover }"
+            @click.stop="toggleRewindPopover"
+            title="回退到此消息之前"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="1 4 1 10 7 10"/>
+              <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+            </svg>
+            <span>回退</span>
+          </button>
+
+          <div v-if="showRewindPopover" class="delete-popover" @click.stop>
+            <div class="popover-warn">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="1 4 1 10 7 10"/>
+                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+              </svg>
+              <span>将把该消息重新填入输入框，并删除该消息及其之后的所有消息，此操作不可恢复</span>
+            </div>
+            <div class="popover-actions">
+              <button class="popover-btn confirm" @click.stop="doRewind">确认回退</button>
+              <button class="popover-btn cancel" @click.stop="cancelRewindPopover">取消</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 删除按钮 -->
+        <div class="user-delete-area" :class="{ 'has-popover': showDeletePopover }">
+          <button
+            class="user-action-btn"
+            :class="{ active: showDeletePopover }"
+            @click.stop="toggleDeletePopover"
+            title="删除此轮对话"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"/>
+              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+            </svg>
+            <span>删除</span>
+          </button>
+
+          <div v-if="showDeletePopover" class="delete-popover" @click.stop>
+            <div class="popover-warn">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/>
+                <line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+              <span>将删除该消息及其之后的所有消息，且无法恢复</span>
+            </div>
+            <div class="popover-actions">
+              <button class="popover-btn confirm" @click.stop="doDelete">确认删除</button>
+              <button class="popover-btn cancel" @click.stop="cancelDeletePopover">取消</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- 加载动画（仅最新一条空助手消息显示） -->
       <div
         v-if="message.role === 'assistant' && (!message.segments || message.segments.length === 0) && isLatest"
@@ -122,9 +190,11 @@ import { toolDisplayName } from '../utils/index.js'
 marked.setOptions({ breaks: true, gfm: true })
 
 const props = defineProps({
-  message:  { type: Object, required: true },
-  isLatest: { type: Boolean, default: false },
+  message:    { type: Object, required: true },
+  isLatest:   { type: Boolean, default: false },
 })
+
+const emit = defineEmits(['delete', 'rewind'])
 
 /** 提取助手消息中的纯文本内容（用于复制） */
 const assistantText = computed(() => {
@@ -146,6 +216,50 @@ async function copyContent() {
   } catch {
     // 降级：静默失败
   }
+}
+
+const showDeletePopover = ref(false)
+
+/** 判断是否为前端生成的临时 ID（以 temp_ 开头） */
+function isTempId(id) {
+  return id && id.startsWith('temp_')
+}
+
+/** 切换删除确认弹窗（打开 delete 时关闭 rewind） */
+function toggleDeletePopover() {
+  showRewindPopover.value = false
+  showDeletePopover.value = !showDeletePopover.value
+}
+
+/** 取消删除 */
+function cancelDeletePopover() {
+  showDeletePopover.value = false
+}
+
+/** 确认删除 */
+function doDelete() {
+  showDeletePopover.value = false
+  emit('delete', props.message.id)
+}
+
+// ---- 回退功能（rewind） ----
+const showRewindPopover = ref(false)
+
+/** 切换回退确认弹窗（打开 rewind 时关闭 delete） */
+function toggleRewindPopover() {
+  showDeletePopover.value = false
+  showRewindPopover.value = !showRewindPopover.value
+}
+
+/** 取消回退 */
+function cancelRewindPopover() {
+  showRewindPopover.value = false
+}
+
+/** 确认回退：将消息内容回填到输入框，并删除该消息及之后所有消息 */
+function doRewind() {
+  showRewindPopover.value = false
+  emit('rewind', { id: props.message.id, content: props.message.content })
 }
 
 /** 渲染 Markdown 文本为 HTML */
@@ -429,4 +543,121 @@ function renderMd(text) {
   background: rgba(74, 222, 128, 0.10);
   opacity: 1;
 }
+
+/* ---- 用户消息删除按钮（气泡外右下角） ---- */
+.user-delete-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 4px;
+  position: relative;
+}
+
+.user-delete-area {
+  position: relative;
+}
+
+.user-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xxs);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: all 0.2s var(--ease-out);
+  opacity: 0;
+  transform: translateY(2px);
+}
+
+/* hover 消息行时显示操作按钮 */
+.message-wrapper:hover .user-action-btn {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.user-action-btn:hover,
+.user-action-btn.active {
+  color: var(--danger);
+  border-color: rgba(239, 68, 68, 0.30);
+  background: rgba(239, 68, 68, 0.10);
+}
+
+/* ---- 删除确认弹窗 ---- */
+.delete-popover {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  width: 280px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-danger, rgba(239, 68, 68, 0.30));
+  border-radius: var(--radius-xs);
+  padding: 14px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.40);
+  z-index: 20;
+  animation: popover-in 0.18s var(--ease-out);
+}
+
+@keyframes popover-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.popover-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  line-height: 1.6;
+  margin-bottom: 12px;
+}
+
+.popover-warn svg {
+  flex-shrink: 0;
+  color: var(--danger);
+  margin-top: 1px;
+}
+
+.popover-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.popover-btn {
+  padding: 5px 14px;
+  border-radius: var(--radius-xxs);
+  font-size: 12px;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: all 0.15s;
+  border: 1px solid transparent;
+}
+
+.popover-btn.confirm {
+  background: var(--danger);
+  color: #fff;
+  border-color: var(--danger);
+}
+
+.popover-btn.confirm:hover {
+  opacity: 0.85;
+}
+
+.popover-btn.cancel {
+  background: transparent;
+  color: var(--text-secondary);
+  border-color: var(--border);
+}
+
+.popover-btn.cancel:hover {
+  border-color: var(--text-muted);
+  color: var(--text-primary);
+}
+
 </style>

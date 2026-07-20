@@ -875,6 +875,73 @@ class ReActAgent:
         await self.checkpointer.adelete_thread(conversation_id)
         return True
 
+    async def delete_messages(
+        self, conversation_id: str, message_ids: List[str]
+    ) -> Optional[int]:
+        """
+        删除指定消息及其之后的所有消息（级联删除）
+
+        采用与 _auto_reject_pending_tools 相同的 RemoveMessage 墓碑机制：
+          1. 构建 agent graph 并从 checkpointer 读取当前消息列表
+          2. 找到最早匹配 message_ids 的消息索引
+          3. 从该索引处截断，删除其后所有消息
+          4. 通过 aupdate_state 写回墓碑
+
+        Returns:
+            None — 会话不存在（供路由层区分会话不存在与消息未找到两种 404）
+            0    — 会话存在，但未找到任何匹配的消息
+            >0   — 实际删除的消息数量
+        """
+        # 先校验会话存在性，使路由层能区分"会话不存在"与"消息未找到"
+        if not await self.registry.conversation_exists(conversation_id):
+            logger.warning("[DeleteMessages] 会话 %s 不存在", conversation_id)
+            return None
+
+        # 构建 agent graph（与 get_history 同样的方式，确保 checkpointer 配置一致）
+        tools = self.tool_registry.get_langchain_tools()
+        interrupt_on = self.tool_registry.get_interrupt_on_map()
+        agent_graph = build_agent_graph(
+            tools=tools,
+            system_prompt=DEFAULT_SYSTEM_PROMPT,
+            checkpointer=self.checkpointer,
+            interrupt_on=interrupt_on,
+        )
+
+        config = {"configurable": {"thread_id": conversation_id}}
+        state = await agent_graph.aget_state(config)
+        messages = state.values.get("messages", [])
+
+        if not messages:
+            logger.info("[DeleteMessages] 会话 %s 无消息可删除", conversation_id)
+            return 0
+
+        # 找到最早匹配 message_ids 的消息索引
+        target_ids = set(message_ids)
+        earliest_idx = -1
+        for i, msg in enumerate(messages):
+            if msg.id in target_ids:
+                earliest_idx = i
+                break
+
+        if earliest_idx == -1:
+            logger.warning(
+                "[DeleteMessages] 会话 %s 中未找到匹配的消息 ID: %s",
+                conversation_id, message_ids,
+            )
+            return 0
+
+        # 截取从 earliest_idx 到末尾的所有消息
+        messages_to_remove = messages[earliest_idx:]
+        remove_ops = [RemoveMessage(id=msg.id) for msg in messages_to_remove]
+
+        logger.info(
+            "[DeleteMessages] 会话 %s: 从索引 %d 开始删除 %d 条消息",
+            conversation_id, earliest_idx, len(messages_to_remove),
+        )
+
+        await agent_graph.aupdate_state(config, {"messages": remove_ops})
+        return len(messages_to_remove)
+
     async def rename_conversation(self, conversation_id: str, title: str) -> bool:
         """
         重命名指定会话

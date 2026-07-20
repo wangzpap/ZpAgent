@@ -72,6 +72,28 @@ export async function clearConversationMessages(conversationId) {
 }
 
 /**
+ * 批量删除消息（单条删除时传入单元素数组即可）
+ *
+ * 删除最早匹配消息及其之后的所有消息（级联删除）。
+ * 返回 { deleted_count: 3 } 表示实际删除了3条。
+ *
+ * @param {string} conversationId - 会话 ID
+ * @param {string[]} messageIds - 要删除的消息 ID 列表
+ * @returns {Promise<{deleted_count: number}>}
+ */
+export async function batchDeleteMessages(conversationId, messageIds) {
+  const result = await request(
+    `${BASE}/conversations/${conversationId}/messages/batch-delete`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message_ids: messageIds }),
+    }
+  )
+  return result.data
+}
+
+/**
  * 重命名指定会话
  *
  * POST /api/conversations/{id}/rename，仅更新会话标题。
