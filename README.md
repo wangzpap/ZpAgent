@@ -1,4 +1,4 @@
-# ZpAgent - ReAct 智能体项目
+# ZpAgent - ReAct ChatBot智能体项目
 
 基于 **LangChain 1.2 + LangGraph + FastAPI + Vue 3** 构建的 ReAct 范式智能体，支持 SSE 流式输出、动态工具多选、多轮会话记忆和 Human-in-the-Loop 工具审批。
 
