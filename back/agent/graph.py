@@ -29,6 +29,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.state import CompiledStateGraph
 
 from llm import create_llm
+from middleware import build_middleware_list
 
 logger = logging.getLogger(__name__)
 
@@ -82,10 +83,13 @@ def build_agent_graph(
         )
 
     # ---- 构建中间件列表 ----
-    # HumanInTheLoopMiddleware：当 interrupt_on 非空时启用
-    # 中间件在 LLM 产出 tool_calls 后（after_model 钩子）检查每个工具调用，
-    # 对需要审批的工具触发 interrupt()，暂停图执行等待人工决策
-    middleware_list = []
+    # 1. 通用中间件（由 middleware/ 包统一管理，如摘要压缩）
+    #    build_middleware_list() 内部根据配置决定哪些中间件启用
+    # 2. HITL 中间件（由 interrupt_on 参数控制，与工具审批绑定）
+    #    当 interrupt_on 非空时启用，在 LLM 产出 tool_calls 后检查每个工具调用，
+    #    对需要审批的工具触发 interrupt()，暂停图执行等待人工决策
+    middleware_list = build_middleware_list()
+
     if interrupt_on:
         middleware_list.append(
             HumanInTheLoopMiddleware(

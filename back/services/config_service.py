@@ -20,6 +20,7 @@ import os
 import logging
 
 from entity.common.llm_config import LlmConfigResponse
+from entity.common.middleware_config import MiddlewareConfigResponse
 from config import reload_settings
 
 logger = logging.getLogger(__name__)
@@ -130,6 +131,98 @@ class ConfigService:
 
         # 热重载：写入 .env 后立即刷新内存中的 settings 单例
         # 这样下一次 build_agent_graph() → create_llm() 就会读到新配置，无需重启服务
+        reload_settings()
+
+    @staticmethod
+    def get_middleware_config() -> MiddlewareConfigResponse:
+        """
+        读取当前中间件配置
+
+        从 .env 文件中提取 SUMMARY_* 相关字段，返回中间件配置响应。
+
+        Returns:
+            MiddlewareConfigResponse 实例
+
+        Raises:
+            FileNotFoundError: .env 文件不存在时抛出
+        """
+        env_dict = ConfigService._read_env_file()
+
+        return MiddlewareConfigResponse(
+            summary_enabled=env_dict.get("SUMMARY_ENABLED", "false").lower() == "true",
+            summary_model=env_dict.get("SUMMARY_MODEL", ""),
+            summary_max_tokens=int(env_dict.get("SUMMARY_MAX_TOKENS", "4000")),
+            summary_messages_to_keep=int(env_dict.get("SUMMARY_MESSAGES_TO_KEEP", "20")),
+        )
+
+    @staticmethod
+    def save_middleware_config(
+        summary_enabled: bool,
+        summary_model: str,
+        summary_max_tokens: int,
+        summary_messages_to_keep: int,
+    ) -> None:
+        """
+        保存中间件配置到 .env 文件
+
+        更新策略与 save_llm_config 一致：已有键原地替换，新键追加到末尾。
+        写入后调用 reload_settings() 热重载，下次构建图时自动生效。
+
+        Args:
+            summary_enabled:          是否启用摘要压缩
+            summary_model:            摘要专用模型（空=复用主模型）
+            summary_max_tokens:       触发摘要的 token 阈值
+            summary_messages_to_keep: 摘要后保留最近消息数
+
+        Raises:
+            FileNotFoundError: .env 文件不存在时抛出
+        """
+        updates = {
+            "SUMMARY_ENABLED": str(summary_enabled).lower(),
+            "SUMMARY_MODEL": summary_model,
+            "SUMMARY_MAX_TOKENS": str(summary_max_tokens),
+            "SUMMARY_MESSAGES_TO_KEEP": str(summary_messages_to_keep),
+        }
+
+        lines = ConfigService._read_env_lines()
+        updated_keys = set()
+        new_lines = []
+
+        for line in lines:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                new_lines.append(line)
+                continue
+
+            eq_idx = stripped.find("=")
+            if eq_idx == -1:
+                new_lines.append(line)
+                continue
+
+            key = stripped[:eq_idx].strip()
+
+            if key in updates:
+                new_lines.append(f"{key}={updates[key]}\n")
+                updated_keys.add(key)
+            else:
+                new_lines.append(line)
+
+        # 追加未被替换的新键
+        for key, value in updates.items():
+            if key not in updated_keys:
+                new_lines.append(f"{key}={value}\n")
+
+        with open(_ENV_PATH, "w", encoding="utf-8") as f:
+            f.writelines(new_lines)
+
+        logger.info(
+            "中间件配置已更新: SUMMARY_ENABLED=%s, SUMMARY_MODEL=%s, "
+            "SUMMARY_MAX_TOKENS=%d, SUMMARY_MESSAGES_TO_KEEP=%d",
+            summary_enabled, summary_model or "(主模型)",
+            summary_max_tokens, summary_messages_to_keep,
+        )
+
+        # 热重载：下次 build_agent_graph() → build_middleware_list() 读到新配置
         reload_settings()
 
     # ============================================

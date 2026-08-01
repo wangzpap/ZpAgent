@@ -65,6 +65,23 @@ class Settings(BaseSettings):
         description="MCP 服务器配置文件路径（相对于 back/ 目录）",
     )
 
+    # ---- 摘要中间件配置（SummarizationMiddleware） ----
+    # 当对话历史接近上下文窗口限制时，自动对早期消息做摘要压缩，
+    # 保留对话主线但减少 token 占用。全局生效（所有会话）。
+    SUMMARY_ENABLED: bool = Field(
+        default=False, description="是否启用摘要压缩中间件"
+    )
+    SUMMARY_MODEL: str = Field(
+        default="",
+        description="摘要专用模型名称（空字符串表示复用主模型 MODEL_NAME）",
+    )
+    SUMMARY_MAX_TOKENS: int = Field(
+        default=4000, gt=0, description="触发摘要的 token 阈值（历史消息超过此值时触发）"
+    )
+    SUMMARY_MESSAGES_TO_KEEP: int = Field(
+        default=20, gt=0, description="摘要后保留最近的消息条数"
+    )
+
     # ---- 服务配置 ----
     HOST: str = Field(default="0.0.0.0", description="服务监听地址")
     PORT: int = Field(default=8000, gt=0, le=65535, description="服务端口")

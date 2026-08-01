@@ -18,7 +18,7 @@ from langchain_openai import ChatOpenAI
 from config import settings
 
 
-def create_llm() -> ChatOpenAI:
+def create_llm(model_name_override: str = "") -> ChatOpenAI:
     """
     创建 ChatOpenAI 实例（工厂函数）
 
@@ -30,13 +30,18 @@ def create_llm() -> ChatOpenAI:
       - 流式调用: async for chunk in llm.astream(messages)  → 逐 token 输出
       - 工具绑定: llm.bind_tools(tools)  → 让 LLM 知道有哪些工具可用
 
+    Args:
+        model_name_override: 可选，覆盖默认模型名称。
+            用于需要单独指定模型的场景（如摘要中间件用更轻量的模型）。
+            空字符串（默认）表示使用 settings.MODEL_NAME。
+
     Returns:
         配置好的 ChatOpenAI 实例
     """
     return ChatOpenAI(
         api_key=settings.API_KEY,        # API 密钥（鉴权用）
         base_url=settings.BASE_URL,      # API 地址（决定调用哪个服务商）
-        model=settings.MODEL_NAME,       # 模型名称（如 deepseek-v4-flash）
+        model=model_name_override or settings.MODEL_NAME,  # 模型名称（优先使用覆盖值）
         temperature=settings.TEMPERATURE, # 温度：越高越随机，越低越确定
         max_completion_tokens=settings.MAX_COMPLETION_TOKENS,  # 最大生成 token 数
         request_timeout=settings.REQUEST_TIMEOUT,  # 单次请求超时时间

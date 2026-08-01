@@ -1,18 +1,18 @@
 <!--
-  SettingsDialog.vue — 系统设置弹窗
+  SettingsDialog.vue — 系统设置弹窗（多板块架构）
 
-  模态弹窗形式的配置面板，当前支持 LLM 大模型配置：
-    - API 基础地址（默认 DeepSeek）
-    - API 密钥（密码输入，支持显示/隐藏切换）
-    - 模型名称
+  侧栏导航 + 内容面板的经典设置页布局：
+    - 左侧：板块导航列表（模型配置、对话压缩、未来更多...）
+    - 右侧：当前选中板块的配置表单
+    - 底部：统一的保存/取消操作栏 + Toast 提示
 
-  设计为可扩展结构，后续可在同一弹窗中添加更多配置分区。
+  扩展方式：新增板块只需创建对应组件并在 navItems 中注册。
 
   Props:
     visible - 是否显示弹窗
 
   Events:
-    close   - 关闭弹窗（点击遮罩层、取消按钮或保存成功后）
+    close   - 关闭弹窗
 -->
 <template>
   <Teleport to="body">
@@ -31,7 +31,7 @@
               </div>
               <div>
                 <h2 class="settings-title">系统设置</h2>
-                <p class="settings-subtitle">配置大模型参数，保存后立即生效</p>
+                <p class="settings-subtitle">配置保存后立即生效，无需重启服务</p>
               </div>
             </div>
             <button class="settings-close-btn" @click="$emit('close')" title="关闭">
@@ -43,86 +43,43 @@
             </button>
           </div>
 
-          <!-- 配置内容 -->
-          <div class="settings-body">
-            <!-- LLM 配置分区 -->
-            <div class="settings-section">
-              <div class="section-label">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-                  <path d="M2 17l10 5 10-5"/>
-                  <path d="M2 12l10 5 10-5"/>
-                </svg>
-                大模型配置
-              </div>
+          <!-- 主体：侧栏 + 内容 -->
+          <div class="settings-main">
+            <!-- 侧栏导航 -->
+            <nav class="settings-nav">
+              <button
+                v-for="item in navItems"
+                :key="item.key"
+                class="nav-item"
+                :class="{ active: activeNav === item.key }"
+                @click="activeNav = item.key"
+              >
+                <span class="nav-icon" v-html="item.icon"></span>
+                <span class="nav-label">{{ item.label }}</span>
+              </button>
+            </nav>
 
-              <!-- API 地址 -->
-              <div class="form-group">
-                <label class="form-label">API 地址</label>
-                <input
-                  v-model="form.base_url"
-                  class="form-input"
-                  type="text"
-                  placeholder="https://api.deepseek.com"
-                  spellcheck="false"
-                />
-                <span class="form-hint">兼容 OpenAI 格式的 API 服务地址</span>
-              </div>
-
-              <!-- API 密钥 -->
-              <div class="form-group">
-                <label class="form-label">
-                  API 密钥
-                  <span v-if="hasApiKey" class="key-badge">已配置</span>
-                  <span v-else class="key-badge empty">未配置</span>
-                </label>
-                <div class="input-with-toggle">
-                  <input
-                    v-model="form.api_key"
-                    class="form-input"
-                    :type="showApiKey ? 'text' : 'password'"
-                    :placeholder="hasApiKey ? '留空保持现有密钥不变' : '请输入 API 密钥'"
-                    spellcheck="false"
-                    autocomplete="off"
-                  />
-                  <button class="toggle-visibility-btn" @click="showApiKey = !showApiKey" :title="showApiKey ? '隐藏' : '显示'">
-                    <!-- 眼睛图标（显示） -->
-                    <svg v-if="!showApiKey" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                      <circle cx="12" cy="12" r="3"/>
-                    </svg>
-                    <!-- 眼睛+斜线图标（隐藏） -->
-                    <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
-                      <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
-                      <line x1="1" y1="1" x2="23" y2="23"/>
-                    </svg>
-                  </button>
-                </div>
-                <span class="form-hint">DeepSeek、智谱、Moonshot 等服务商的 API Key</span>
-              </div>
-
-              <!-- 模型名称 -->
-              <div class="form-group">
-                <label class="form-label">模型名称</label>
-                <input
-                  v-model="form.model_name"
-                  class="form-input"
-                  type="text"
-                  placeholder="deepseek-v4-flash"
-                  spellcheck="false"
-                />
-                <span class="form-hint">所使用的大模型标识（如 deepseek-v4-flash、gpt-4o）</span>
-              </div>
+            <!-- 内容面板 -->
+            <div class="settings-content">
+              <ModelSettings
+                v-show="activeNav === 'model'"
+                ref="modelSettingsRef"
+                :active="activeNav === 'model'"
+                @toast="showToast"
+                @saving="v => saving = v"
+              />
+              <CompressionSettings
+                v-show="activeNav === 'compression'"
+                ref="compressionSettingsRef"
+                :active="activeNav === 'compression'"
+                @toast="showToast"
+                @saving="v => saving = v"
+              />
             </div>
           </div>
 
           <!-- 底部操作栏 -->
           <div class="settings-footer">
-            <!-- 提示信息 -->
             <Transition name="toast">
               <div v-if="toastMessage" class="toast" :class="toastType">
                 <svg v-if="toastType === 'success'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -158,8 +115,9 @@
 </template>
 
 <script setup>
-import { ref, reactive, watch } from 'vue'
-import { fetchLlmConfig, saveLlmConfig } from '../api/index.js'
+import { ref, watch } from 'vue'
+import ModelSettings from './settings/ModelSettings.vue'
+import CompressionSettings from './settings/CompressionSettings.vue'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -167,22 +125,34 @@ const props = defineProps({
 
 const emit = defineEmits(['close'])
 
-// ---- 表单状态 ----
-const form = reactive({
-  base_url: 'https://api.deepseek.com',
-  api_key: '',
-  model_name: 'deepseek-v4-flash',
-})
-const hasApiKey = ref(false)    // 后端是否已配置 API 密钥
-const showApiKey = ref(false)  // 是否显示明文密钥
-const saving = ref(false)      // 保存中状态
+// ---- 导航配置 ----
+// 新增板块时：1. 创建组件  2. 在此数组注册  3. 在 template 中添加 v-show 渲染
+const navItems = [
+  {
+    key: 'model',
+    label: '模型配置',
+    icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>',
+  },
+  {
+    key: 'compression',
+    label: '对话压缩',
+    icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="7.5 4.21 12 6.81 16.5 4.21"/><polyline points="7.5 19.79 7.5 14.6 3 12"/><polyline points="21 12 16.5 14.6 16.5 19.79"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>',
+  },
+]
+
+// ---- 状态 ----
+const activeNav = ref('model')
+const saving = ref(false)
+
+// 子组件引用（用于调用 save 方法）
+const modelSettingsRef = ref(null)
+const compressionSettingsRef = ref(null)
 
 // ---- Toast 提示 ----
 const toastMessage = ref('')
-const toastType = ref('success') // 'success' | 'error'
+const toastType = ref('success')
 let toastTimer = null
 
-/** 显示 Toast 提示 */
 function showToast(message, type = 'success') {
   toastMessage.value = message
   toastType.value = type
@@ -192,43 +162,27 @@ function showToast(message, type = 'success') {
   }, 3000)
 }
 
-// ---- 弹窗打开时加载配置 ----
-watch(() => props.visible, async (newVal) => {
+// ---- 弹窗打开/关闭 ----
+watch(() => props.visible, (newVal) => {
   if (!newVal) {
-    // 关闭时重置状态
-    showApiKey.value = false
     toastMessage.value = ''
+    saving.value = false
     return
   }
-
-  // 打开时从后端加载当前配置
-  try {
-    const config = await fetchLlmConfig()
-    form.base_url = config.base_url
-    form.model_name = config.model_name
-    form.api_key = ''  // 始终清空，让用户主动输入
-    hasApiKey.value = config.has_api_key
-  } catch (e) {
-    showToast(e.message, 'error')
-  }
+  // 打开时重置到第一个板块
+  activeNav.value = 'model'
 })
 
-// ---- 保存配置 ----
+// ---- 保存当前板块 ----
 async function handleSave() {
-  saving.value = true
-  try {
-    const msg = await saveLlmConfig({
-      base_url: form.base_url.trim(),
-      api_key: form.api_key.trim(),
-      model_name: form.model_name.trim(),
-    })
-    showToast(msg || '配置已保存并立即生效', 'success')
-    // 保存成功后延迟关闭弹窗
+  let success = false
+  if (activeNav.value === 'model' && modelSettingsRef.value) {
+    success = await modelSettingsRef.value.save()
+  } else if (activeNav.value === 'compression' && compressionSettingsRef.value) {
+    success = await compressionSettingsRef.value.save()
+  }
+  if (success) {
     setTimeout(() => emit('close'), 1500)
-  } catch (e) {
-    showToast(e.message, 'error')
-  } finally {
-    saving.value = false
   }
 }
 </script>
@@ -253,9 +207,8 @@ async function handleSave() {
 }
 
 .settings-dialog {
-  width: 480px;
-  max-width: 92vw;
-  max-height: 85vh;
+  width: 860px;
+  height: 620px;
   background: var(--bg-card);
   border: 1px solid var(--border-light);
   border-radius: var(--radius);
@@ -298,7 +251,7 @@ async function handleSave() {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  padding: 24px 24px 20px;
+  padding: 20px 24px 16px;
   border-bottom: 1px solid var(--border);
   background: linear-gradient(135deg, rgba(232, 187, 94, 0.04) 0%, transparent 60%);
 }
@@ -332,7 +285,7 @@ async function handleSave() {
 
 .settings-subtitle {
   font-size: 12px;
-  color: var(--text-muted);
+  color: var(--text-primary);
   margin-top: 3px;
   line-height: 1.4;
 }
@@ -358,139 +311,83 @@ async function handleSave() {
   background: var(--bg-hover);
 }
 
-/* ---- 内容区 ---- */
-.settings-body {
+/* ---- 主体（侧栏 + 内容） ---- */
+.settings-main {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* ---- 侧栏导航 ---- */
+.settings-nav {
+  width: 160px;
+  flex-shrink: 0;
+  padding: 16px 12px;
+  border-right: 1px solid var(--border);
+  background: var(--bg-base);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-align: left;
+  width: 100%;
+}
+
+.nav-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.nav-item.active {
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-weight: 600;
+  border: 1px solid var(--border-accent);
+}
+
+.nav-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
+.nav-item.active .nav-icon {
+  opacity: 1;
+}
+
+.nav-label {
+  white-space: nowrap;
+}
+
+/* ---- 内容面板 ---- */
+.settings-content {
   flex: 1;
   overflow-y: auto;
   padding: 20px 24px;
 }
 
-.settings-section {
-  margin-bottom: 8px;
-}
-
-.section-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--accent);
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  margin-bottom: 18px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--border);
-}
-
-.section-label svg {
-  opacity: 0.7;
-}
-
-/* ---- 表单组 ---- */
-.form-group {
-  margin-bottom: 20px;
-}
-
-.form-group:last-child {
-  margin-bottom: 0;
-}
-
-.form-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  font-weight: 550;
-  color: var(--text-secondary);
-  margin-bottom: 8px;
-}
-
-.key-badge {
-  font-size: 10px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: var(--radius-xxs);
-  letter-spacing: 0.3px;
-  background: rgba(74, 222, 128, 0.10);
-  color: var(--success);
-  border: 1px solid rgba(74, 222, 128, 0.20);
-}
-
-.key-badge.empty {
-  background: rgba(239, 107, 107, 0.10);
-  color: var(--danger);
-  border-color: rgba(239, 107, 107, 0.20);
-}
-
-.form-input {
-  width: 100%;
-  padding: 10px 14px;
-  background: var(--bg-input);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-xs);
-  color: var(--text-primary);
-  font-size: 13px;
-  font-family: var(--font-mono);
-  line-height: 1.5;
-  outline: none;
-  transition: all var(--transition-fast);
-}
-
-.form-input:focus {
-  border-color: var(--border-accent);
-  box-shadow: 0 0 0 3px var(--accent-dim);
-}
-
-.form-input::placeholder {
-  color: var(--text-muted);
-  opacity: 0.5;
-  font-family: var(--font-mono);
-}
-
-.form-hint {
-  display: block;
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-top: 6px;
-  opacity: 0.6;
-  line-height: 1.4;
-}
-
-/* ---- 密钥输入框（带显示/隐藏切换） ---- */
-.input-with-toggle {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.input-with-toggle .form-input {
-  padding-right: 42px;
-}
-
-.toggle-visibility-btn {
-  position: absolute;
-  right: 8px;
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 4px 6px;
-  border-radius: var(--radius-xxs);
-  transition: all var(--transition-fast);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.toggle-visibility-btn:hover {
-  color: var(--text-primary);
-  background: var(--bg-hover);
-}
-
 /* ---- 底部操作栏 ---- */
 .settings-footer {
-  padding: 16px 24px;
+  padding: 14px 24px;
   border-top: 1px solid var(--border);
   display: flex;
   flex-direction: column;
@@ -537,7 +434,7 @@ async function handleSave() {
   font-family: var(--font-ui);
   cursor: pointer;
   transition: all var(--transition-normal);
-  box-shadow: 0 2px 10px var(--accent-glow), var(--shadow-inset);
+  box-shadow: 0 2px 10px var(--accent-glow);
   position: relative;
   overflow: hidden;
 }
@@ -553,7 +450,7 @@ async function handleSave() {
 
 .settings-save-btn:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 6px 20px var(--accent-glow), var(--shadow-inset);
+  box-shadow: 0 6px 20px var(--accent-glow);
 }
 
 .settings-save-btn:hover:not(:disabled)::before {
@@ -619,7 +516,6 @@ async function handleSave() {
   flex-shrink: 0;
 }
 
-/* Toast 过渡动画 */
 .toast-enter-active {
   transition: all 0.3s var(--ease-out);
 }

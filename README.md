@@ -13,6 +13,7 @@
 - **消息删除与回退**：用户消息支持"删除"（级联删除该消息及后续所有消息）和"回退"（删除后回填输入框重新编辑），保证对话上下文一致
 - **MCP 工具扩展**：通过 `mcp_servers.json` 配置加载外部 MCP 工具服务
 - **页面配置大模型**：前端设置面板直接修改 API 地址、密钥和模型名称，保存后热重载立即生效，无需重启服务
+- **对话压缩（摘要中间件）**：长对话历史 token 超过阈值时自动将早期消息压缩为摘要，保留主线、减少上下文占用，可配置触发阈值、保留消息数及摘要专用模型
 
 ## 界面预览
 
@@ -36,9 +37,11 @@
 
   ![image-20260720234554243](README.assets/image-20260720234554243.png)
 
-- 页面支持模型配置
+- 设置面板支持多板块配置（模型配置 + 对话压缩）
 
-![image-20260711131759354](README.assets/image-20260711131759354.png)
+  ![image-20260801233706250](README.assets/image-20260801233706250.png)
+
+  ![image-20260801233726328](README.assets/image-20260801233726328.png)
 
 ## 项目架构
 
@@ -47,12 +50,12 @@ ZpAgent-Python/
 ├── zpagent.sh                       # 一键启动/停止/重启脚本
 ├── back/                            # 后端（Python + FastAPI + LangChain + LangGraph）
 │   ├── main.py                      # FastAPI 应用入口
-│   ├── config.py                    # 配置管理（pydantic-settings）
+│   ├── config.py                    # 配置管理（pydantic-settings，含 LLM / 摘要中间件）
 │   ├── .env                         # 环境变量（API Key 等，不提交 Git）
 │   ├── mcp_servers.json             # MCP 外部工具服务配置
 │   ├── agent/
 │   │   ├── __init__.py              # ReAct Agent 编排层（流式事件 + HITL + 会话管理）
-│   │   └── graph.py                 # LangGraph Agent 图工厂（create_agent）
+│   │   └── graph.py                 # LangGraph Agent 图工厂（create_agent + 中间件组装）
 │   ├── llm/
 │   │   └── __init__.py              # LLM 客户端（ChatOpenAI）
 │   ├── tools/
@@ -60,6 +63,9 @@ ZpAgent-Python/
 │   │   ├── builtin_tools.py         # 内置工具（位置/时间/天气）
 │   │   ├── mcp_loader.py            # MCP 工具加载器
 │   │   └── registry.py             # 工具注册表（HITL 策略管理）
+│   ├── middleware/                  # Agent 中间件管理（统一组装）
+│   │   ├── __init__.py              # build_middleware_list() 中间件工厂
+│   │   └── summarization.py         # 摘要压缩中间件（SummarizationMiddleware）
 │   ├── conversation/                # 会话元数据存储（策略模式）
 │   │   ├── __init__.py              # 工厂函数 + 导出
 │   │   ├── base.py                  # 抽象基类
@@ -75,10 +81,10 @@ ZpAgent-Python/
 │   │   ├── chat/                    # 聊天相关（Message、ChatRequest、Decision、DecideRequest）
 │   │   ├── conversation/            # 会话管理（ConversationInfo、ConversationDetail、RenameRequest）
 │   │   ├── tool/                    # 工具相关（ToolInfo）
-│   │   └── common/                  # 公共模型（ApiResponse、LlmConfigRequest、LlmConfigResponse）
+│   │   └── common/                  # 公共模型（ApiResponse、LlmConfigRequest/Response、MiddlewareConfigRequest/Response）
 │   ├── services/
 │   │   ├── __init__.py              # 服务层导出
-│   │   └── config_service.py        # 配置服务（.env 读写 + 热重载）
+│   │   └── config_service.py        # 配置服务（.env 读写 + 热重载，LLM / 中间件配置）
 │   ├── routers/
 │   │   └── api.py                   # 统一 API 路由（聊天 + HITL + 会话 + 工具 + 配置管理）
 │   └── requirements.txt             # Python 依赖
@@ -102,8 +108,11 @@ ZpAgent-Python/
             ├── ConversationList.vue # 侧边栏会话列表（含设置入口）
             ├── ToolSelector.vue     # 工具多选栏
             ├── ApprovalPanel.vue    # HITL 工具审批面板
-            ├── SettingsDialog.vue   # 系统设置弹窗（大模型配置）
-            └── ConfirmDialog.vue    # 通用确认弹窗
+            ├── SettingsDialog.vue   # 系统设置弹窗（侧栏导航 + 多板块）
+            ├── ConfirmDialog.vue    # 通用确认弹窗
+            └── settings/
+                ├── ModelSettings.vue       # 大模型配置板块
+                └── CompressionSettings.vue # 对话压缩（摘要）配置板块
 ```
 
 ## 技术栈
@@ -111,7 +120,7 @@ ZpAgent-Python/
 | 层面 | 技术 | 版本 | 说明 |
 |------|------|------|------|
 | 后端框架 | FastAPI | 0.115+ | 高性能异步 Web 框架 |
-| AI 框架 | LangChain | 1.2+ | LLM 调用 + 工具绑定 + astream_events 流式 |
+| AI 框架 | LangChain | 1.2+ | LLM 调用 + 工具绑定 + astream_events 流式 + 中间件（摘要压缩） |
 | Agent 引擎 | LangGraph | 1.2+ | ReAct 状态图 + checkpointer + HITL |
 | LLM API | OpenAI 兼容 | — | DeepSeek / 智谱 / Moonshot / OpenAI 等 |
 | 流式传输 | SSE | — | Server-Sent Events 逐 token 实时输出 |
@@ -256,7 +265,7 @@ npm run dev
 ## 使用说明
 
 1. 浏览器打开 **http://localhost:5173**
-2. 点击左下角齿轮图标打开设置面板，配置 API 地址、密钥和模型名称（也可通过 `.env` 文件配置）
+2. 点击左下角齿轮图标打开设置面板，通过左侧导航切换"模型配置"或"对话压缩"板块进行配置（也可通过 `.env` 文件配置）
 3. 在底部输入框输入消息，按 Enter 发送
 4. 通过工具栏选择需要启用的工具
 5. 观察 Agent 的 ReAct 推理过程（工具调用 → 观察结果 → 最终回答）
@@ -266,7 +275,7 @@ npm run dev
 
 在 `back/.env` 中配置：
 
-> **提示**：`API_KEY`、`BASE_URL`、`MODEL_NAME` 三项也可通过前端左下角设置面板修改，保存后热重载立即生效，无需重启服务。
+> **提示**：`API_KEY`、`BASE_URL`、`MODEL_NAME` 以及摘要压缩（`SUMMARY_*`）配置均可通过前端左下角设置面板修改，保存后热重载立即生效，无需重启服务。
 
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
@@ -278,6 +287,10 @@ npm run dev
 | `REQUEST_TIMEOUT` | LLM 请求超时（秒） | `60` |
 | `MAX_RETRIES` | LLM 请求重试次数 | `2` |
 | `MAX_ITERATIONS` | ReAct 最大迭代次数 | `10` |
+| `SUMMARY_ENABLED` | 是否启用摘要压缩中间件 | `false` |
+| `SUMMARY_MODEL` | 摘要专用模型名称（空=复用主模型） | — |
+| `SUMMARY_MAX_TOKENS` | 触发摘要的 token 阈值 | `4000` |
+| `SUMMARY_MESSAGES_TO_KEEP` | 摘要后保留最近消息条数 | `20` |
 | `HOST` | 服务监听地址 | `0.0.0.0` |
 | `PORT` | 服务端口 | `8000` |
 | `CONVERSATION_BACKEND` | 会话元数据存储后端 | `memory` |
@@ -307,6 +320,28 @@ npm run dev
 ```
 
 通过 `.env` 中的 `CONVERSATION_BACKEND` 和 `CHECKPOINT_BACKEND` 切换存储后端，无需改代码。
+
+## 对话压缩机制（摘要中间件）
+
+长对话会消耗大量 token，且可能超出上下文窗口。项目基于 LangChain 官方 `SummarizationMiddleware` 实现了自动摘要压缩：
+
+```
+┌────────────────────────────────────────────────────────────┐
+│  SummarizationMiddleware（before_model 钩子）                │
+│  ─────────────────────────────────────────                  │
+│  每次 LLM 调用前检查历史消息的 token 总量                     │
+│  超过 SUMMARY_MAX_TOKENS 阈值？                              │
+│    是 → 用摘要 LLM 将早期消息压缩为一段摘要文本               │
+│        保留最近 SUMMARY_MESSAGES_TO_KEEP 条消息不动           │
+│        摘要以 "## Previous conversation summary:" 前缀插入    │
+│    否 → 保持原始历史不变                                     │
+└────────────────────────────────────────────────────────────┘
+```
+
+- **全局生效**：作用于所有会话，通过 `SUMMARY_ENABLED` 总开关控制
+- **摘要专用模型**：`SUMMARY_MODEL` 可指定更轻量的模型专门做摘要（`create_llm()` 支持模型名覆盖），留空则复用主模型
+- **中间件统一管理**：`middleware/` 包的 `build_middleware_list()` 统一组装所有中间件，未来新增中间件只需在该包注册即可被图自动加载
+- **配置入口**：`.env` 的 `SUMMARY_*` 字段，或前端设置弹窗"对话压缩"板块，保存后热重载立即生效
 
 ## ReAct 循环原理
 
@@ -403,6 +438,8 @@ def my_new_tool(param: str) -> str:
 | `POST` | `/api/tools/reload` | 热重载 MCP 工具 |
 | `GET` | `/api/config/llm` | 获取当前 LLM 配置（密钥脱敏） |
 | `POST` | `/api/config/llm` | 保存 LLM 配置到 .env（热重载立即生效） |
+| `GET` | `/api/config/middleware` | 获取当前中间件配置（摘要压缩等） |
+| `POST` | `/api/config/middleware` | 保存中间件配置到 .env（热重载立即生效） |
 
 ## 协议
 

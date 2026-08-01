@@ -181,6 +181,37 @@ export async function saveLlmConfig(config) {
 }
 
 // ============================================
+// 配置管理（中间件配置）
+// ============================================
+
+/**
+ * 获取当前中间件配置
+ *
+ * GET /api/config/middleware，返回摘要压缩等中间件的配置状态。
+ * 用于打开设置弹窗"对话压缩"板块时填充表单。
+ */
+export async function fetchMiddlewareConfig() {
+  const result = await request(`${BASE}/config/middleware`)
+  return result.data
+}
+
+/**
+ * 保存中间件配置到 .env 文件
+ *
+ * POST /api/config/middleware，将摘要压缩配置写入 .env 并热重载。
+ *
+ * @param {Object} config - { summary_enabled, summary_model, summary_max_tokens, summary_messages_to_keep }
+ */
+export async function saveMiddlewareConfig(config) {
+  const result = await request(`${BASE}/config/middleware`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  })
+  return result.msg
+}
+
+// ============================================
 // SSE 流式聊天请求
 // ============================================
 

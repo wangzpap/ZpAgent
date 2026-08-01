@@ -24,6 +24,8 @@ FastAPI 路由体系说明：
   POST /api/tools/reload                        — 热重载 MCP 工具
   GET  /api/config/llm                          — 获取当前 LLM 配置（密钥脱敏）
   POST /api/config/llm                          — 保存 LLM 配置到 .env 文件
+  GET  /api/config/middleware                   — 获取当前中间件配置（摘要压缩等）
+  POST /api/config/middleware                   — 保存中间件配置到 .env 文件
 """
 
 import json
@@ -35,7 +37,7 @@ from fastapi import APIRouter, Request
 # StreamingResponse: 流式 HTTP 响应，服务器可以逐块推送数据（而非一次性返回）
 from fastapi.responses import StreamingResponse
 
-from entity import ChatRequest, DecideRequest, RenameRequest, LlmConfigRequest, BatchDeleteRequest
+from entity import ChatRequest, DecideRequest, RenameRequest, LlmConfigRequest, BatchDeleteRequest, MiddlewareConfigRequest
 from entity.common.api_response import ApiResponse
 from services.config_service import ConfigService
 
@@ -437,5 +439,60 @@ async def save_llm_config(request: LlmConfigRequest):
             model_name=request.model_name,
         )
         return ApiResponse.ok(msg="配置已保存并立即生效")
+    except FileNotFoundError as e:
+        return ApiResponse.fail(404, str(e))
+
+
+# ============================================
+# 配置管理（中间件配置）
+# ============================================
+@router.get("/config/middleware")
+async def get_middleware_config():
+    """
+    获取当前中间件配置
+
+    读取 .env 文件中的摘要压缩等中间件配置。
+    前端打开设置弹窗的"对话压缩"板块时调用此接口填充表单。
+
+    Returns:
+        {
+            "code": 0,
+            "data": {
+                "summary_enabled": false,
+                "summary_model": "",
+                "summary_max_tokens": 4000,
+                "summary_messages_to_keep": 20
+            }
+        }
+
+    Raises:
+        404: .env 文件不存在
+    """
+    try:
+        config = ConfigService.get_middleware_config()
+        return ApiResponse.ok(data=config.model_dump())
+    except FileNotFoundError as e:
+        return ApiResponse.fail(404, str(e))
+
+
+@router.post("/config/middleware")
+async def save_middleware_config(request: MiddlewareConfigRequest):
+    """
+    保存中间件配置到 .env 文件
+
+    前端在设置弹窗中修改中间件配置后点击保存时调用。
+    写入 .env 后自动热重载，下次对话即生效。
+
+    Returns:
+        成功或失败的 ApiResponse
+    """
+    try:
+        ConfigService.save_middleware_config(
+            summary_enabled=request.summary_enabled,
+            summary_model=request.summary_model,
+            summary_max_tokens=request.summary_max_tokens,
+            summary_messages_to_keep=request.summary_messages_to_keep,
+        )
+        return ApiResponse.ok(msg="中间件配置已保存并立即生效")
     except FileNotFoundError as e:
         return ApiResponse.fail(404, str(e))
