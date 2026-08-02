@@ -135,6 +135,7 @@ function processSseEvent(assistantMsg, eventType, data) {
         // 用后端 resume 返回的真实 call_id / args 更新 pending 段
         existing.call_id = data.call_id || ''
         if (data.args) existing.args = data.args
+        if (data.step != null) existing.step = data.step
       } else {
         segs.push({
           type: 'tool_call',
@@ -142,6 +143,9 @@ function processSseEvent(assistantMsg, eventType, data) {
           call_id: data.call_id || '',
           args: data.args,
           observation: data.observation ?? null,
+          step: data.step ?? null,        // ReAct 迭代轮次（用于步骤编号）
+          duration_ms: null,              // 工具耗时，tool_result 事件到达时填充
+          ok: null,                       // 成功/失败，tool_result 到达时填充（null=执行中）
         })
       }
       break
@@ -153,6 +157,9 @@ function processSseEvent(assistantMsg, eventType, data) {
         for (let k = segs.length - 1; k >= 0; k--) {
           if (segs[k].type === 'tool_call' && segs[k].call_id === data.call_id) {
             segs[k].observation = data.observation
+            if (data.duration_ms != null) segs[k].duration_ms = data.duration_ms
+            if (data.step != null) segs[k].step = data.step
+            if (data.ok != null) segs[k].ok = data.ok
             matched = true
             break
           }
@@ -162,6 +169,9 @@ function processSseEvent(assistantMsg, eventType, data) {
         for (let k = segs.length - 1; k >= 0; k--) {
           if (segs[k].type === 'tool_call' && segs[k].observation == null) {
             segs[k].observation = data.observation
+            if (data.duration_ms != null) segs[k].duration_ms = data.duration_ms
+            if (data.step != null) segs[k].step = data.step
+            if (data.ok != null) segs[k].ok = data.ok
             break
           }
         }
@@ -203,6 +213,9 @@ function processSseEvent(assistantMsg, eventType, data) {
               call_id: '',
               args: action.args || {},
               observation: null,
+              step: null,
+              duration_ms: null,
+              ok: null,
             })
           }
         }
@@ -401,6 +414,9 @@ function processHistoryMessages(raw) {
             tool: tc.name,
             args: tc.args,
             observation,
+            step: null,        // 历史消息无 ReAct 轮次信息，渲染时回退为顺序编号
+            duration_ms: null, // 历史消息无耗时数据
+            ok: null,          // 历史消息未下发成功/失败状态，渲染按"完成"中性态处理
           })
         }
       }

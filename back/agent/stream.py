@@ -16,6 +16,7 @@ run()（新消息）和 resume()（审批恢复）共享此逻辑。
 """
 
 import logging
+import time
 from typing import AsyncGenerator, Dict, Any, List
 
 from langchain_core.messages import AIMessage
@@ -123,6 +124,11 @@ async def stream_agent_events(
                 "tool_input": tool_input,
                 "tool_args": tool_args,
                 "call_id": call_id,
+                # 工具开始执行的高精度时间戳。选用 time.perf_counter()（单调递增、
+                # 纳秒级精度、不受系统时钟回拨影响），是测量时间间隔的首选时钟。
+                # 该值随 run_id 存入 pending_tool_runs，on_tool_end 通过同一 run_id
+                # 取回并做差，即可得到本次工具的真实执行耗时（含并发场景下互不串扰）。
+                "start_ts": time.perf_counter(),
             }
 
             yield {
@@ -146,11 +152,27 @@ async def stream_agent_events(
             else:
                 observation = str(output) if output else ""
 
+            # 判定工具是否成功：LangGraph ToolNode 默认 handle_tool_errors=True，
+            # 工具抛错会被捕获并产出 status="error" 的 ToolMessage（仍走 on_tool_end，
+            # 错误文本作为 observation 回传给 LLM）。因此这里以 output.status 为准：
+            # 显式为 "error" 记为失败，其余（"success" 或无该属性）一律视为成功。
+            tool_ok = getattr(output, "status", "success") != "error"
+
             if info:
+                # 计算工具执行耗时（单位毫秒）：on_tool_end 与 on_tool_start 的
+                # perf_counter 差值 ×1000，round 取整避免浮点噪声。start_ts 理论上
+                # 必然存在（on_tool_start 已写入），此处仍做 None 防御，缺失时下发
+                # None，前端据此隐藏耗时而非显示错误值。
+                start_ts = info.get("start_ts")
+                duration_ms = (
+                    round((time.perf_counter() - start_ts) * 1000)
+                    if start_ts is not None else None
+                )
                 logger.info(
-                    "[Stream][迭代 %d] ✅ 工具执行完成: %s | "
+                    "[Stream][迭代 %d] %s 工具执行完成: %s | 耗时 %sms | "
                     "结果（前100字）: %r",
-                    iteration, info["tool_name"],
+                    iteration, "✅" if tool_ok else "❌",
+                    info["tool_name"], duration_ms,
                     observation[:100] + "..." if len(observation) > 100 else observation,
                 )
                 yield {
@@ -160,6 +182,12 @@ async def stream_agent_events(
                         "call_id": info["call_id"],
                         "args": info["tool_args"],
                         "observation": observation,
+                        # step（ReAct 轮次）与 duration_ms（耗时）随结果一并下发，
+                        # 前端工具卡片据此渲染步骤编号徽标与耗时标签。
+                        "step": info.get("step"),
+                        "duration_ms": duration_ms,
+                        # ok：工具是否成功。前端据此切换状态点颜色（成功绿/失败红）。
+                        "ok": tool_ok,
                     },
                 }
 
