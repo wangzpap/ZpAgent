@@ -289,14 +289,22 @@ html, body {
 /* ============================================
    消息区域
    ============================================ */
-.messages-container {
+/* 消息区域外壳：占据主区域剩余空间，为"回到底部"按钮提供定位上下文。
+   overflow: hidden 防止按钮溢出，同时不影响内部 messages-container 的滚动。 */
+.messages-wrapper {
   flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.messages-container {
+  height: 100%;
   overflow-y: auto;
   padding: 36px 28px;
   display: flex;
   flex-direction: column;
   gap: 28px;
-  position: relative;
   z-index: 1;
   scrollbar-gutter: stable;
 }
