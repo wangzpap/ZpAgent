@@ -46,21 +46,27 @@
 ## 项目架构
 
 ```
-ZpAgent-Python/
+ZpAgent/
 ├── zpagent.sh                       # 一键启动/停止/重启脚本
+├── log/                             # 运行日志目录（脚本启动时自动生成）
 ├── back/                            # 后端（Python + FastAPI + LangChain + LangGraph）
 │   ├── main.py                      # FastAPI 应用入口
 │   ├── config.py                    # 配置管理（pydantic-settings，含 LLM / 摘要中间件）
 │   ├── .env                         # 环境变量（API Key 等，不提交 Git）
 │   ├── mcp_servers.json             # MCP 外部工具服务配置
-│   ├── agent/
-│   │   ├── __init__.py              # ReAct Agent 编排层（流式事件 + HITL + 会话管理）
-│   │   └── graph.py                 # LangGraph Agent 图工厂（create_agent + 中间件组装）
+│   ├── mcp_servers.example.json     # MCP 服务配置模板
+│   ├── agent/                       # ReAct Agent 包（按职责拆分）
+│   │   ├── __init__.py              # 包入口（导出 ReActAgent）
+│   │   ├── core.py                  # 编排层：ReActAgent 类（生命周期 + run/resume + 会话 CRUD）
+│   │   ├── stream.py                # 流式适配：astream_events → 前端 SSE 事件
+│   │   ├── interrupt.py             # HITL 中断处理（检测 / 提取审批信息 / 过期清理）
+│   │   ├── formatter.py             # 消息格式化：LangChain Message → 前端展示字典
+│   │   └── graph.py                 # LangGraph Agent 图工厂（create_agent + HITL 中间件）
 │   ├── llm/
 │   │   └── __init__.py              # LLM 客户端（ChatOpenAI）
 │   ├── tools/
 │   │   ├── __init__.py              # 工具导出
-│   │   ├── builtin_tools.py         # 内置工具（位置/时间/天气）
+│   │   ├── builtin_tools.py         # 内置工具（get_datetime 当前时间 / base64_tool 编解码）
 │   │   ├── mcp_loader.py            # MCP 工具加载器
 │   │   └── registry.py             # 工具注册表（HITL 策略管理）
 │   ├── middleware/                  # Agent 中间件管理（统一组装）
@@ -78,7 +84,7 @@ ZpAgent-Python/
 │   │   └── mysql_store.py           # MySQL 实现
 │   ├── entity/
 │   │   ├── __init__.py              # Pydantic 数据模型（统一导出）
-│   │   ├── chat/                    # 聊天相关（Message、ChatRequest、Decision、DecideRequest）
+│   │   ├── chat/                    # 聊天相关（Message、ChatRequest、Decision、DecideRequest、BatchDeleteRequest）
 │   │   ├── conversation/            # 会话管理（ConversationInfo、ConversationDetail、RenameRequest）
 │   │   ├── tool/                    # 工具相关（ToolInfo）
 │   │   └── common/                  # 公共模型（ApiResponse、LlmConfigRequest/Response、MiddlewareConfigRequest/Response）
@@ -132,6 +138,11 @@ ZpAgent-Python/
 项目提供 `zpagent.sh` 一键管理脚本，自动处理虚拟环境检测、依赖安装和服务管理。
 
 ### 前置条件
+
+> **⚠️ Python 版本要求**：本项目依赖 `fastapi>=0.137`，要求 **Python ≥ 3.10**。
+> 请先用 `python3 --version` 检查版本；macOS 系统自带的 Python（如 3.9）不满足要求，
+> 建议通过 Homebrew 安装 Python 3.10+（如 `brew install python@3.12`），
+> 创建虚拟环境时使用对应版本，如 `python3.12 -m venv venv`。
 
 1. 编辑 `back/.env`，配置你的 LLM API 密钥：
    ```bash
